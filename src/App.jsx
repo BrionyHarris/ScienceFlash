@@ -92,8 +92,22 @@ function getConfidence(ts) {
 }
 
 // ============================================================
-// ANSWER CHECKING
 // ============================================================
+// ANSWER CHECKING (smart — strips filler, keyword matching)
+// ============================================================
+const FILLER_WORDS = new Set([
+  "a", "an", "the", "is", "are", "it", "its", "they", "them", "their",
+  "that", "this", "these", "those", "of", "to", "in", "by", "for",
+  "from", "with", "and", "or", "be", "been", "being", "was", "were",
+  "has", "have", "had", "do", "does", "did", "will", "would", "can",
+  "could", "should", "may", "might", "shall", "also", "very", "much",
+  "more", "most", "some", "any", "all", "each", "every", "both",
+  "which", "what", "when", "where", "how", "who", "whom", "whose",
+  "there", "here", "then", "than", "so", "as", "at", "on", "up",
+  "into", "out", "about", "because", "if", "but", "not", "no", "yes",
+  "called", "known", "used", "using", "allows", "causes", "means",
+]);
+
 function normalise(s) {
   return s.toLowerCase().trim()
     .replace(/\s+/g, " ")
@@ -101,15 +115,63 @@ function normalise(s) {
     .replace(/[""]/g, '"')
     .replace(/\.$/, "");
 }
+
+function stripFiller(s) {
+  return s.split(/\s+/).filter(w => !FILLER_WORDS.has(w)).join(" ");
+}
+
+function extractKeywords(s) {
+  return normalise(s).split(/[\s,;:.()\-/]+/).filter(w => w.length > 1 && !FILLER_WORDS.has(w));
+}
+
 function checkAnswer(userRaw, correctRaw, alts = []) {
   const u = normalise(userRaw);
   if (!u) return false;
-  const candidates = [correctRaw, ...alts].map(normalise);
-  for (const c of candidates) {
+  const candidates = [correctRaw, ...alts];
+
+  for (const candidate of candidates) {
+    const c = normalise(candidate);
+
+    // 1. Exact match (after normalisation)
     if (u === c) return true;
-    // Ignore spaces/punctuation
-    if (u.replace(/[\s,.\-]/g, "") === c.replace(/[\s,.\-]/g, "")) return true;
+
+    // 2. Match ignoring all spaces and punctuation
+    if (u.replace(/[\s,.\-;:()]/g, "") === c.replace(/[\s,.\-;:()]/g, "")) return true;
+
+    // 3. Match after stripping filler words
+    const uStripped = stripFiller(u);
+    const cStripped = stripFiller(c);
+    if (uStripped && cStripped && uStripped === cStripped) return true;
+
+    // 4. Match ignoring spaces/punctuation after stripping filler
+    if (uStripped && cStripped &&
+        uStripped.replace(/[\s,.\-;:()]/g, "") === cStripped.replace(/[\s,.\-;:()]/g, "")) return true;
   }
+
+  // 5. Keyword matching for longer answers
+  // Get keywords from all correct answers and find the best match
+  for (const candidate of candidates) {
+    const correctKeywords = extractKeywords(candidate);
+    if (correctKeywords.length <= 2) continue; // only use keyword matching for longer answers
+
+    const userKeywords = extractKeywords(userRaw);
+    let matches = 0;
+    for (const kw of correctKeywords) {
+      // Check if user's answer contains this keyword or a close variant
+      if (userKeywords.some(uk =>
+        uk === kw ||
+        uk.startsWith(kw.slice(0, -1)) || // handle plural/tense: "contracts" matches "contract"
+        kw.startsWith(uk.slice(0, -1))
+      )) {
+        matches++;
+      }
+    }
+
+    const matchRatio = matches / correctKeywords.length;
+    // Accept if 75%+ of keywords present
+    if (matchRatio >= 0.75 && matches >= 2) return true;
+  }
+
   return false;
 }
 
