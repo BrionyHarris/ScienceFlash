@@ -60,7 +60,6 @@ const SUBJECTS = [
 ];
 
 const TOPICS = [
-  // ── BIOLOGY ──
   {id:"gas_exchange",subject:"biology",name:"Gas Exchange & Transpiration",emoji:"🌿",color:"#16a34a",questions:[
     {q:"What is gas exchange in plants?",answer:"The diffusion of oxygen and carbon dioxide in and out of the leaf through the stomata",alts:["diffusion of O2 and CO2 through stomata"],hint:"What moves in and out of leaves"},
     {q:"What process requires CO2 to diffuse into a leaf?",answer:"Photosynthesis",alts:[],hint:"Makes glucose using light"},
@@ -127,7 +126,6 @@ const TOPICS = [
     {q:"What colour does iodine turn if starch IS present?",answer:"Blue-black",alts:["dark blue","blue black"],hint:"Dramatic dark colour"},
     {q:"Why put a leaf in ethanol when testing for starch?",answer:"To remove the chlorophyll",alts:["remove chlorophyll","to decolourise the leaf"],hint:"Green would hide result"},
   ]},
-  // ── CHEMISTRY ──
   {id:"atomic_structure",subject:"chemistry",name:"Atomic Structure",emoji:"⚛️",color:"#f59e0b",questions:[
     {q:"What are the three subatomic particles?",answer:"Protons, neutrons, electrons",alts:["proton, neutron, electron"],hint:"Two in nucleus, one orbiting"},
     {q:"What is the charge of a proton?",answer:"Positive (+1)",alts:["+1","positive","+"],hint:"In the nucleus, positive"},
@@ -186,7 +184,6 @@ const TOPICS = [
     {q:"Calculate moles in 36g of water (Mr=18)",answer:"2 moles",alts:["2","2 mol"],hint:"36 / 18"},
     {q:"What is an empirical formula?",answer:"The simplest whole number ratio of atoms of each element in a compound",alts:["simplest ratio of atoms"],hint:"Simplest ratio"},
   ]},
-  // ── PHYSICS ──
   {id:"forces_motion",subject:"physics",name:"Forces & Motion",emoji:"🚀",color:"#3b82f6",questions:[
     {q:"Formula for average speed?",answer:"Speed = distance / time",alts:["s = d/t","distance / time"],hint:"How far / how long"},
     {q:"Formula for acceleration?",answer:"Acceleration = change in velocity / time",alts:["a = (v-u)/t"],hint:"How quickly speed changes"},
@@ -261,7 +258,8 @@ export default function App(){
   const [attempt,setAttempt]=useState(0);
   const [showHint,setShowHint]=useState(false);
   const [session,setSession]=useState({correct:0,total:0});
-  const [focus,setFocus]=useState(null);
+  const [focus,setFocus]=useState(null); // null | {type:"subject",id} | {type:"topics",ids:[]}
+  const [selected,setSelected]=useState(new Set()); // topic ids selected on progress screen
   const [parentData,setParentData]=useState(null);
   const [parentLoading,setParentLoading]=useState(false);
   const [parentExpanded,setParentExpanded]=useState(null);
@@ -271,49 +269,65 @@ export default function App(){
   const [loginName,setLoginName]=useState("");
   const [loginLoading,setLoginLoading]=useState(false);
 
-  function getFocusLabel(){
-    if(!focus)return null;
-    if(focus.type==="subject"){const s=SUBJECTS.find(s=>s.id===focus.id);return s?`${s.emoji} ${s.name}`:null}
-    if(focus.type==="topic"){const t=TOPICS.find(t=>t.id===focus.id);return t?`${t.emoji} ${t.name}`:null}
+  function getPool(f=focus){
+    if(!f)return TOPICS;
+    if(f.type==="subject")return TOPICS.filter(t=>t.subject===f.id);
+    if(f.type==="topics")return TOPICS.filter(t=>f.ids.includes(t.id));
+    return TOPICS;
+  }
+  function getFocusLabel(f=focus){
+    if(!f)return null;
+    if(f.type==="subject"){const s=SUBJECTS.find(s=>s.id===f.id);return s?`${s.emoji} ${s.name}`:null}
+    if(f.type==="topics"){
+      if(f.ids.length===1){const t=TOPICS.find(t=>t.id===f.ids[0]);return t?`${t.emoji} ${t.name}`:null}
+      return `${f.ids.length} topics selected`;
+    }
     return null;
   }
+  function toggleSelect(topicId){
+    setSelected(prev=>{const n=new Set(prev);if(n.has(topicId))n.delete(topicId);else n.add(topicId);return n});
+  }
+  function selectSubject(subjectId){
+    const ids=TOPICS.filter(t=>t.subject===subjectId).map(t=>t.id);
+    setSelected(prev=>{const n=new Set(prev);const allSelected=ids.every(id=>n.has(id));ids.forEach(id=>{if(allSelected)n.delete(id);else n.add(id)});return n});
+  }
+  function startSelected(){
+    if(selected.size===0)return;
+    const f={type:"topics",ids:[...selected]};
+    setFocus(f);pickQuestion(progress,f);setSelected(new Set());setScreen("quiz");
+  }
   async function handleLogin(){
-    if(!loginName.trim())return; setLoginLoading(true);
+    if(!loginName.trim())return;setLoginLoading(true);
     const name=loginName.trim(),id=name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");
     const prog=await loadProgress(id);
     setUser({name,id});setProgress(prog);pickQuestion(prog,null);setScreen("quiz");setLoginLoading(false);
   }
   async function openParent(){setParentLoading(true);setScreen("parent");const all=await loadAllProgress();setParentData(all);setParentLoading(false)}
   function pickQuestion(prog=progress,f=focus){
-    const pool=f?(f.type==="subject"?TOPICS.filter(t=>t.subject===f.id):TOPICS.filter(t=>t.id===f.id)):TOPICS;
-    const due=pool.filter(t=>isDue(prog[t.id]));const from=due.length>0?due:pool;
+    const pool=getPool(f);const due=pool.filter(t=>isDue(prog[t.id]));const from=due.length>0?due:pool;
     const topic=pick(from);let q,tries=0;
     do{q=pick(topic.questions);tries++}while(recentQs.current.includes(q.q)&&tries<15);
     recentQs.current=[...recentQs.current.slice(-8),q.q];
     setCurTopic(topic);setCurQ(q);setAnswer("");setFeedback(null);setShowHint(false);setAttempt(0);
     setTimeout(()=>inputRef.current?.focus(),100);
   }
-  function startFocused(type,id){const f={type,id};setFocus(f);pickQuestion(progress,f);setScreen("quiz")}
+  function startSubject(id){const f={type:"subject",id};setFocus(f);pickQuestion(progress,f);setSelected(new Set());setScreen("quiz")}
   function clearFocus(){setFocus(null);pickQuestion(progress,null)}
   async function submitAnswer(){
     if(!answer.trim()||(feedback&&feedback.type!=="tryagain"))return;
     const ok=checkAns(answer,curQ.answer,curQ.alts||[]);
     if(ok){
-      const sc=attempt===0?1:.5;const prev=progress[curTopic.id]||{correct:0,total:0,interval:1};
-      const iv=nextIv(prev.interval||1,sc);
+      const sc=attempt===0?1:.5;const prev=progress[curTopic.id]||{correct:0,total:0,interval:1};const iv=nextIv(prev.interval||1,sc);
       const up={...progress,[curTopic.id]:{correct:(prev.correct||0)+(attempt===0?1:0),total:(prev.total||0)+1,interval:iv,nextDate:addDays(new Date(),iv),lastSeen:new Date().toISOString()}};
       setProgress(up);setSession(s=>({correct:s.correct+1,total:s.total+1}));setStreak(s=>s+1);
-      setFeedback({type:"correct",msg:attempt===0?"Correct! 🎉":"Got it on second try! 👍"});
-      if(uid)saveProgress(uid,up);
+      setFeedback({type:"correct",msg:attempt===0?"Correct! 🎉":"Got it on second try! 👍"});if(uid)saveProgress(uid,up);
     }else if(attempt===0){
-      setAttempt(1);setFeedback({type:"tryagain",msg:"Not quite — have another go!"});setAnswer("");
-      setTimeout(()=>inputRef.current?.focus(),100);return;
+      setAttempt(1);setFeedback({type:"tryagain",msg:"Not quite — have another go!"});setAnswer("");setTimeout(()=>inputRef.current?.focus(),100);return;
     }else{
       const prev=progress[curTopic.id]||{correct:0,total:0,interval:1};
       const up={...progress,[curTopic.id]:{correct:prev.correct||0,total:(prev.total||0)+1,interval:1,nextDate:addDays(new Date(),1),lastSeen:new Date().toISOString()}};
       setProgress(up);setSession(s=>({...s,total:s.total+1}));setStreak(0);
-      setFeedback({type:"wrong",msg:`The answer was: ${curQ.answer}`});
-      if(uid)saveProgress(uid,up);
+      setFeedback({type:"wrong",msg:`The answer was: ${curQ.answer}`});if(uid)saveProgress(uid,up);
     }
   }
 
@@ -340,71 +354,62 @@ export default function App(){
     </div>
   );
 
-  // ═══ PARENT DASHBOARD ═══
+  // ═══ PARENT ═══
   if(screen==="parent"){
     return(
-      <div style={wr}>
-        <link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
+      <div style={wr}><link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
         <div style={{maxWidth:960,margin:"0 auto",width:"100%"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"24px",flexWrap:"wrap",gap:"12px"}}>
             <h2 style={{fontFamily:D.display,fontWeight:800,fontSize:"24px"}}>👨‍👩‍👦 Parent Dashboard</h2>
             <button onClick={()=>setScreen("login")} style={{...b("transparent",D.muted),border:`1px solid ${D.border}`}}>← Back</button>
           </div>
           {parentLoading?<div style={{textAlign:"center",padding:"60px",color:D.muted}}>⏳ Loading...</div>
-          :!parentData||parentData.length===0?<div style={{...cd,textAlign:"center",padding:"40px"}}><p style={{color:D.muted}}>📭 No students have used the app yet.</p></div>
+          :!parentData||parentData.length===0?<div style={{...cd,textAlign:"center",padding:"40px"}}><p style={{color:D.muted}}>📭 No students yet.</p></div>
           :<div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
             {parentData.map((student,si)=>{
-              const prog=student.progress;
-              const totalQs=TOPICS.reduce((s,t)=>s+(prog[t.id]?.total||0),0);
-              const totalCorrect=TOPICS.reduce((s,t)=>s+(prog[t.id]?.correct||0),0);
-              const pct=totalQs>0?Math.round(100*totalCorrect/totalQs):0;
-              const topicsDone=TOPICS.filter(t=>prog[t.id]?.total>0).length;
+              const prog=student.progress;const totalQs=TOPICS.reduce((s,t)=>s+(prog[t.id]?.total||0),0);const totalC=TOPICS.reduce((s,t)=>s+(prog[t.id]?.correct||0),0);
+              const pct=totalQs>0?Math.round(100*totalC/totalQs):0;const topicsDone=TOPICS.filter(t=>prog[t.id]?.total>0).length;
+              const confN=TOPICS.filter(t=>getConf(prog[t.id])==="confident").length;const needsN=TOPICS.filter(t=>prog[t.id]?.total>0&&getConf(prog[t.id])==="needs work").length;
               const dueN=TOPICS.filter(t=>isDue(prog[t.id])).length;
-              const confN=TOPICS.filter(t=>getConf(prog[t.id])==="confident").length;
-              const needsN=TOPICS.filter(t=>prog[t.id]?.total>0&&getConf(prog[t.id])==="needs work").length;
               const lastActive=TOPICS.reduce((l,t)=>{const ls=prog[t.id]?.lastSeen;return ls&&(!l||new Date(ls)>new Date(l))?ls:l},null);
               const isExp=parentExpanded===si;
-              return(
-                <div key={si} style={{borderRadius:"16px",overflow:"hidden",border:`1px solid ${D.border}`}}>
-                  <div onClick={()=>setParentExpanded(isExp?null:si)} style={{background:D.card,padding:"20px 24px",cursor:"pointer",transition:"background .15s"}} onMouseEnter={e=>e.currentTarget.style.background=D.border} onMouseLeave={e=>e.currentTarget.style.background=D.card}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
-                        <div style={{width:"48px",height:"48px",borderRadius:"50%",background:`linear-gradient(135deg,${D.accent},#06b6d4)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",fontWeight:800,color:"#052e16"}}>{student.name.charAt(0).toUpperCase()}</div>
-                        <div>
-                          <div style={{fontWeight:800,fontSize:"18px",fontFamily:D.display,textTransform:"capitalize"}}>{student.name}</div>
-                          <div style={{fontSize:"12px",color:D.muted}}>{lastActive?`Last active: ${new Date(lastActive).toLocaleDateString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}`:"Not started"}</div>
-                        </div>
-                      </div>
-                      <div style={{display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}}>
-                        <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:D.accent}}>{totalQs}</div><div style={{fontSize:"10px",color:D.muted}}>Answers</div></div>
-                        <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:pct>=70?"#22c55e":pct>=40?"#f59e0b":"#ef4444"}}>{pct}%</div><div style={{fontSize:"10px",color:D.muted}}>Accuracy</div></div>
-                        <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px"}}>{topicsDone}/{TOPICS.length}</div><div style={{fontSize:"10px",color:D.muted}}>Topics</div></div>
-                        <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:"#22c55e"}}>{confN}</div><div style={{fontSize:"10px",color:D.muted}}>Confident</div></div>
-                        <span style={{fontSize:"18px",color:D.muted,transition:"transform .2s",transform:isExp?"rotate(180deg)":"none"}}>▼</span>
-                      </div>
+              return(<div key={si} style={{borderRadius:"16px",overflow:"hidden",border:`1px solid ${D.border}`}}>
+                <div onClick={()=>setParentExpanded(isExp?null:si)} style={{background:D.card,padding:"20px 24px",cursor:"pointer",transition:"background .15s"}} onMouseEnter={e=>e.currentTarget.style.background=D.border} onMouseLeave={e=>e.currentTarget.style.background=D.card}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
+                      <div style={{width:"48px",height:"48px",borderRadius:"50%",background:`linear-gradient(135deg,${D.accent},#06b6d4)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",fontWeight:800,color:"#052e16"}}>{student.name.charAt(0).toUpperCase()}</div>
+                      <div><div style={{fontWeight:800,fontSize:"18px",fontFamily:D.display,textTransform:"capitalize"}}>{student.name}</div><div style={{fontSize:"12px",color:D.muted}}>{lastActive?`Last active: ${new Date(lastActive).toLocaleDateString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}`:"Not started"}</div></div>
+                    </div>
+                    <div style={{display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:D.accent}}>{totalQs}</div><div style={{fontSize:"10px",color:D.muted}}>Answers</div></div>
+                      <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:pct>=70?"#22c55e":pct>=40?"#f59e0b":"#ef4444"}}>{pct}%</div><div style={{fontSize:"10px",color:D.muted}}>Accuracy</div></div>
+                      <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px"}}>{topicsDone}/{TOPICS.length}</div><div style={{fontSize:"10px",color:D.muted}}>Topics</div></div>
+                      <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:"#22c55e"}}>{confN}</div><div style={{fontSize:"10px",color:D.muted}}>Confident</div></div>
+                      <span style={{fontSize:"18px",color:D.muted,transition:"transform .2s",transform:isExp?"rotate(180deg)":"none"}}>▼</span>
                     </div>
                   </div>
-                  {isExp&&<div style={{background:D.bg,padding:"16px 24px"}}>
-                    <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginBottom:"16px"}}>
-                      {needsN>0&&<span style={{background:"#ef444422",color:"#ef4444",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700}}>💪 {needsN} need work</span>}
-                      <span style={{background:"#f59e0b22",color:"#f59e0b",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700}}>📅 {dueN} due</span>
-                      {confN>0&&<span style={{background:"#22c55e22",color:"#22c55e",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700}}>✅ {confN} confident</span>}
-                    </div>
-                    {SUBJECTS.map(sub=>{
-                      const st=TOPICS.filter(t=>t.subject===sub.id);const sq=st.reduce((s,t)=>s+(prog[t.id]?.total||0),0);const sc=st.reduce((s,t)=>s+(prog[t.id]?.correct||0),0);
-                      if(sq===0)return<div key={sub.id} style={{marginBottom:"12px",padding:"12px 16px",borderRadius:"10px",border:`1px solid ${D.border}`,opacity:.5}}><span style={{fontSize:"16px"}}>{sub.emoji}</span> <span style={{fontWeight:700,fontSize:"14px",marginLeft:"8px"}}>{sub.name}</span><span style={{fontSize:"12px",color:D.muted,marginLeft:"12px"}}>Not started</span></div>;
-                      return<div key={sub.id} style={{marginBottom:"12px",borderRadius:"10px",border:`1px solid ${D.border}`,overflow:"hidden"}}>
-                        <div style={{background:sub.grad,padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:700,fontSize:"14px"}}>{sub.emoji} {sub.name}</span><span style={{fontWeight:800,fontSize:"13px"}}>{sq} answers · {Math.round(100*sc/sq)}%</span></div>
-                        <div style={{padding:"10px 16px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"6px"}}>
-                          {st.map(topic=>{const tp=prog[topic.id];if(!tp?.total)return<div key={topic.id} style={{fontSize:"12px",color:D.muted,padding:"6px 10px",borderRadius:"6px",background:D.card}}>{topic.emoji} {topic.name} — <em>not started</em></div>;const conf=getConf(tp);const c2=confCol(conf);const p2=Math.round(100*tp.correct/tp.total);
-                            return<div key={topic.id} style={{fontSize:"12px",padding:"8px 10px",borderRadius:"8px",background:D.card,display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:`3px solid ${c2}`}}><div><div style={{fontWeight:700,marginBottom:"2px"}}>{topic.emoji} {topic.name}</div><div style={{color:D.muted}}>{tp.total} Qs · <span style={{color:c2,fontWeight:700}}>{conf}</span></div></div><div style={{fontWeight:800,color:c2,fontSize:"14px"}}>{p2}%</div></div>
-                          })}
-                        </div>
-                      </div>
-                    })}
-                  </div>}
                 </div>
-              );
+                {isExp&&<div style={{background:D.bg,padding:"16px 24px"}}>
+                  <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginBottom:"16px"}}>
+                    {needsN>0&&<span style={{background:"#ef444422",color:"#ef4444",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700}}>💪 {needsN} need work</span>}
+                    <span style={{background:"#f59e0b22",color:"#f59e0b",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700}}>📅 {dueN} due</span>
+                    {confN>0&&<span style={{background:"#22c55e22",color:"#22c55e",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:700}}>✅ {confN} confident</span>}
+                  </div>
+                  {SUBJECTS.map(sub=>{
+                    const st=TOPICS.filter(t=>t.subject===sub.id);const sq=st.reduce((s,t)=>s+(prog[t.id]?.total||0),0);const sc=st.reduce((s,t)=>s+(prog[t.id]?.correct||0),0);
+                    if(sq===0)return<div key={sub.id} style={{marginBottom:"12px",padding:"12px 16px",borderRadius:"10px",border:`1px solid ${D.border}`,opacity:.5}}><span>{sub.emoji}</span> <span style={{fontWeight:700,fontSize:"14px",marginLeft:"8px"}}>{sub.name}</span><span style={{fontSize:"12px",color:D.muted,marginLeft:"12px"}}>Not started</span></div>;
+                    return<div key={sub.id} style={{marginBottom:"12px",borderRadius:"10px",border:`1px solid ${D.border}`,overflow:"hidden"}}>
+                      <div style={{background:sub.grad,padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:700,fontSize:"14px"}}>{sub.emoji} {sub.name}</span><span style={{fontWeight:800,fontSize:"13px"}}>{sq} answers · {Math.round(100*sc/sq)}%</span></div>
+                      <div style={{padding:"10px 16px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"6px"}}>
+                        {st.map(topic=>{const tp=prog[topic.id];if(!tp?.total)return<div key={topic.id} style={{fontSize:"12px",color:D.muted,padding:"6px 10px",borderRadius:"6px",background:D.card}}>{topic.emoji} {topic.name} — <em>not started</em></div>;
+                          const conf=getConf(tp);const c2=confCol(conf);const p2=Math.round(100*tp.correct/tp.total);
+                          return<div key={topic.id} style={{fontSize:"12px",padding:"8px 10px",borderRadius:"8px",background:D.card,display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:`3px solid ${c2}`}}><div><div style={{fontWeight:700,marginBottom:"2px"}}>{topic.emoji} {topic.name}</div><div style={{color:D.muted}}>{tp.total} Qs · <span style={{color:c2,fontWeight:700}}>{conf}</span></div></div><div style={{fontWeight:800,color:c2,fontSize:"14px"}}>{p2}%</div></div>
+                        })}
+                      </div>
+                    </div>
+                  })}
+                </div>}
+              </div>);
             })}
           </div>}
         </div>
@@ -416,29 +421,47 @@ export default function App(){
   if(screen==="progress"){
     const dc=TOPICS.filter(t=>isDue(progress[t.id])).length;
     return(
-      <div style={wr}>
-        <link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
+      <div style={wr}><link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
         <div style={{maxWidth:960,margin:"0 auto",width:"100%"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"24px",flexWrap:"wrap",gap:"12px"}}>
             <h2 style={{fontFamily:D.display,fontWeight:800,fontSize:"24px"}}>📊 Progress — {user?.name}</h2>
-            <button onClick={()=>{setFocus(null);pickQuestion(progress,null);setScreen("quiz")}} style={b(D.accent,"#052e16")}>Quiz All Topics</button>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+              {selected.size>0&&<button onClick={startSelected} style={{...b("#6366f1","white"),padding:"10px 20px",fontSize:"14px"}}>▶ Quiz {selected.size} topic{selected.size>1?"s":""}</button>}
+              {selected.size>0&&<button onClick={()=>setSelected(new Set())} style={{...b("transparent",D.muted),padding:"10px 16px",fontSize:"13px",border:`1px solid ${D.border}`}}>Clear</button>}
+              <button onClick={()=>{setFocus(null);setSelected(new Set());pickQuestion(progress,null);setScreen("quiz")}} style={b(D.accent,"#052e16")}>Quiz All</button>
+            </div>
           </div>
+
+          {selected.size>0&&<div style={{...cd,marginBottom:"16px",padding:"14px 20px",background:"#6366f122",borderColor:"#6366f144"}}>
+            <div style={{fontSize:"13px",color:"#a5b4fc",fontWeight:600}}>✅ Selected: {[...selected].map(id=>{const t=TOPICS.find(t=>t.id===id);return t?t.name:id}).join(", ")}</div>
+          </div>}
+
           <div style={{...cd,marginBottom:"24px",display:"flex",gap:"32px",justifyContent:"center",flexWrap:"wrap"}}>
             <div style={{textAlign:"center"}}><div style={{fontSize:"28px",fontWeight:800,fontFamily:D.display,color:D.accent}}>{session.correct}</div><div style={{fontSize:"12px",color:D.muted}}>Correct (session)</div></div>
             <div style={{textAlign:"center"}}><div style={{fontSize:"28px",fontWeight:800,fontFamily:D.display}}>{session.total}</div><div style={{fontSize:"12px",color:D.muted}}>Attempted (session)</div></div>
             <div style={{textAlign:"center"}}><div style={{fontSize:"28px",fontWeight:800,fontFamily:D.display,color:"#f59e0b"}}>{dc}</div><div style={{fontSize:"12px",color:D.muted}}>Due</div></div>
           </div>
+
           {SUBJECTS.map(sub=>{
             const st=TOPICS.filter(t=>t.subject===sub.id);const tq=st.reduce((s,t)=>s+(progress[t.id]?.total||0),0);const tc=st.reduce((s,t)=>s+(progress[t.id]?.correct||0),0);const sd=st.filter(t=>isDue(progress[t.id])).length;
+            const allSubSelected=st.every(t=>selected.has(t.id));const someSubSelected=st.some(t=>selected.has(t.id));
             return(
               <div key={sub.id} style={{marginBottom:"20px",borderRadius:"16px",overflow:"hidden",border:`1px solid ${D.border}`}}>
-                <div onClick={()=>startFocused("subject",sub.id)} style={{background:sub.grad,padding:"16px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px",cursor:"pointer",transition:"filter .15s"}} onMouseEnter={e=>e.currentTarget.style.filter="brightness(1.15)"} onMouseLeave={e=>e.currentTarget.style.filter="none"}>
-                  <div style={{display:"flex",alignItems:"center",gap:"12px"}}><span style={{fontSize:"28px"}}>{sub.emoji}</span><div><div style={{fontWeight:800,fontSize:"18px",fontFamily:D.display}}>{sub.name}</div><div style={{fontSize:"12px",opacity:.8}}>{st.length} topics · {tq} answers · {sd} due</div></div></div>
-                  <div style={{display:"flex",alignItems:"center",gap:"12px"}}>{tq>0&&<div style={{background:"rgba(255,255,255,.2)",borderRadius:"10px",padding:"6px 14px",fontWeight:800,fontSize:"14px"}}>{Math.round(100*tc/tq)}%</div>}<div style={{background:"rgba(255,255,255,.25)",borderRadius:"8px",padding:"6px 12px",fontSize:"12px",fontWeight:700}}>▶ Quiz {sub.name}</div></div>
+                <div style={{background:sub.grad,padding:"16px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+                    <span style={{fontSize:"28px"}}>{sub.emoji}</span>
+                    <div><div style={{fontWeight:800,fontSize:"18px",fontFamily:D.display}}>{sub.name}</div><div style={{fontSize:"12px",opacity:.8}}>{st.length} topics · {tq} answers · {sd} due</div></div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                    {tq>0&&<div style={{background:"rgba(255,255,255,.2)",borderRadius:"10px",padding:"6px 14px",fontWeight:800,fontSize:"14px"}}>{Math.round(100*tc/tq)}%</div>}
+                    <button onClick={()=>selectSubject(sub.id)} style={{background:allSubSelected?"rgba(255,255,255,.35)":"rgba(255,255,255,.15)",borderRadius:"8px",padding:"6px 12px",fontSize:"12px",fontWeight:700,border:"none",color:"white",cursor:"pointer",transition:"all .15s"}}>{allSubSelected?"✓ All selected":"☐ Select all"}</button>
+                    <button onClick={()=>startSubject(sub.id)} style={{background:"rgba(255,255,255,.25)",borderRadius:"8px",padding:"6px 12px",fontSize:"12px",fontWeight:700,border:"none",color:"white",cursor:"pointer"}}>▶ Quiz</button>
+                  </div>
                 </div>
                 <div style={{background:D.card,padding:"16px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:"10px"}}>
-                  {st.map(topic=>{const tp=progress[topic.id];const conf=getConf(tp);const c2=confCol(conf);const pct=tp?.total?Math.round(100*tp.correct/tp.total):0;const due=isDue(tp);
-                    return<div key={topic.id} onClick={()=>startFocused("topic",topic.id)} style={{background:D.bg,borderRadius:"12px",padding:"14px 16px",border:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px",cursor:"pointer",transition:"all .15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=topic.color;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=D.border;e.currentTarget.style.transform="none"}}>
+                  {st.map(topic=>{const tp=progress[topic.id];const conf=getConf(tp);const c2=confCol(conf);const pct=tp?.total?Math.round(100*tp.correct/tp.total):0;const due=isDue(tp);const isSel=selected.has(topic.id);
+                    return<div key={topic.id} onClick={()=>toggleSelect(topic.id)} style={{background:isSel?"#6366f118":D.bg,borderRadius:"12px",padding:"14px 16px",border:`2px solid ${isSel?"#6366f1":D.border}`,display:"flex",alignItems:"center",gap:"12px",cursor:"pointer",transition:"all .15s"}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.borderColor=topic.color}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.borderColor=D.border}}>
+                      <div style={{width:"22px",height:"22px",borderRadius:"6px",border:`2px solid ${isSel?"#6366f1":D.border}`,background:isSel?"#6366f1":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",color:"white",flexShrink:0,transition:"all .15s"}}>{isSel?"✓":""}</div>
                       <span style={{fontSize:"20px"}}>{topic.emoji}</span>
                       <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:"13px",marginBottom:"3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{topic.name}</div><div style={{display:"flex",gap:"8px",fontSize:"11px",color:D.muted,flexWrap:"wrap"}}><span style={{color:c2,fontWeight:700}}>{conf}</span>{tp?.total>0&&<span>{pct}%</span>}{due&&<span style={{color:"#f59e0b"}}>📅</span>}</div></div>
                       {tp?.total>0&&<div style={{width:"38px",height:"38px",borderRadius:"50%",border:`3px solid ${c2}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"11px",fontWeight:800,color:c2,flexShrink:0}}>{pct}%</div>}
@@ -449,41 +472,29 @@ export default function App(){
             );
           })}
 
-          {/* ── REVISION LINKS ── */}
+          {/* REVISION LINKS */}
           <div style={{marginTop:"8px",borderRadius:"16px",overflow:"hidden",border:`1px solid ${D.border}`}}>
-            <div style={{background:"linear-gradient(135deg,#1e293b,#334155)",padding:"16px 24px"}}>
-              <div style={{fontWeight:800,fontSize:"18px",fontFamily:D.display}}>📚 Revision Resources</div>
-              <div style={{fontSize:"12px",color:D.muted,marginTop:"4px"}}>Recommended by your teachers</div>
-            </div>
+            <div style={{background:"linear-gradient(135deg,#1e293b,#334155)",padding:"16px 24px"}}><div style={{fontWeight:800,fontSize:"18px",fontFamily:D.display}}>📚 Revision Resources</div><div style={{fontSize:"12px",color:D.muted,marginTop:"4px"}}>Recommended by your teachers</div></div>
             <div style={{background:D.card,padding:"16px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"10px"}}>
-              {LINKS.map((lk,i)=>(
-                <a key={i} href={lk.url} target="_blank" rel="noopener noreferrer" style={{background:D.bg,borderRadius:"12px",padding:"14px 16px",border:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px",textDecoration:"none",color:D.text,transition:"all .15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=lk.color;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=D.border;e.currentTarget.style.transform="none"}}>
-                  <span style={{fontSize:"24px"}}>{lk.emoji}</span>
-                  <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:"13px",color:lk.color}}>{lk.name} ↗</div><div style={{fontSize:"11px",color:D.muted,marginTop:"2px"}}>{lk.desc}</div></div>
-                </a>
-              ))}
+              {LINKS.map((lk,i)=><a key={i} href={lk.url} target="_blank" rel="noopener noreferrer" style={{background:D.bg,borderRadius:"12px",padding:"14px 16px",border:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px",textDecoration:"none",color:D.text,transition:"all .15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=lk.color;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=D.border;e.currentTarget.style.transform="none"}}><span style={{fontSize:"24px"}}>{lk.emoji}</span><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:"13px",color:lk.color}}>{lk.name} ↗</div><div style={{fontSize:"11px",color:D.muted,marginTop:"2px"}}>{lk.desc}</div></div></a>)}
             </div>
           </div>
-
         </div>
       </div>
     );
   }
 
   // ═══ QUIZ ═══
-  const pool=focus?(focus.type==="subject"?TOPICS.filter(t=>t.subject===focus.id):TOPICS.filter(t=>t.id===focus.id)):TOPICS;
-  const dc2=pool.filter(t=>isDue(progress[t.id])).length;
-  const cs=curTopic?SUBJECTS.find(s=>s.id===curTopic.subject):null;
-  const focusLabel=getFocusLabel();
+  const pool=getPool();const dc2=pool.filter(t=>isDue(progress[t.id])).length;
+  const cs=curTopic?SUBJECTS.find(s=>s.id===curTopic.subject):null;const focusLabel=getFocusLabel();
   return(
-    <div style={{...wr,display:"flex",flexDirection:"column",alignItems:"center"}}>
-      <link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
+    <div style={{...wr,display:"flex",flexDirection:"column",alignItems:"center"}}><link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
       <div style={{maxWidth:540,width:"100%"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
           <div><span style={{fontSize:"13px",color:D.muted}}>👋 {user?.name}</span>{streak>=3&&<span style={{marginLeft:"12px",fontSize:"13px",color:"#f59e0b",fontWeight:700}}>🔥 {streak}</span>}</div>
           <button onClick={()=>setScreen("progress")} style={{...b("transparent",D.muted),padding:"8px 14px",fontSize:"13px",border:`1px solid ${D.border}`}}>📊 Progress</button>
         </div>
-        {focusLabel&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:(cs?.color||D.accent)+"18",border:`1px solid ${(cs?.color||D.accent)}44`,borderRadius:"12px",padding:"10px 16px",marginBottom:"16px",fontSize:"13px"}}><span style={{fontWeight:700,color:cs?.color||D.accent}}>Focused: {focusLabel}</span><button onClick={clearFocus} style={{background:"transparent",border:"none",color:D.muted,cursor:"pointer",fontFamily:D.font,fontWeight:700,fontSize:"13px",padding:"4px 8px"}}>✕ Quiz All</button></div>}
+        {focusLabel&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:(cs?.color||"#6366f1")+"18",border:`1px solid ${(cs?.color||"#6366f1")}44`,borderRadius:"12px",padding:"10px 16px",marginBottom:"16px",fontSize:"13px"}}><span style={{fontWeight:700,color:cs?.color||"#6366f1"}}>Focused: {focusLabel}</span><button onClick={clearFocus} style={{background:"transparent",border:"none",color:D.muted,cursor:"pointer",fontFamily:D.font,fontWeight:700,fontSize:"13px",padding:"4px 8px"}}>✕ Quiz All</button></div>}
         <div style={{display:"flex",gap:"16px",marginBottom:"20px",fontSize:"13px",color:D.muted}}>
           <span>✅ {session.correct}/{session.total}</span><span>📅 {dc2} due{focusLabel?"":" (all)"}</span>{!focusLabel&&cs&&<span style={{color:cs.color,fontWeight:700}}>{cs.emoji} {cs.name}</span>}
         </div>
