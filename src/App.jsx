@@ -30,10 +30,14 @@ const FILL=new Set(["a","an","the","is","are","it","its","they","them","their","
 function norm(s){return s.toLowerCase().trim().replace(/\s+/g," ").replace(/['']/g,"'").replace(/[""]/g,'"').replace(/\.$/,"")}
 function strip(s){return s.split(/\s+/).filter(w=>!FILL.has(w)).join(" ")}
 function kws(s){return norm(s).split(/[\s,;:.()\-/]+/).filter(w=>w.length>1&&!FILL.has(w))}
+function levDist(a,b){if(!a.length)return b.length;if(!b.length)return a.length;const m=[];for(let i=0;i<=b.length;i++)m[i]=[i];for(let j=0;j<=a.length;j++)m[0][j]=j;for(let i=1;i<=b.length;i++)for(let j=1;j<=a.length;j++){if(b[i-1]===a[j-1])m[i][j]=m[i-1][j-1];else m[i][j]=Math.min(m[i-1][j-1]+1,m[i][j-1]+1,m[i-1][j]+1)}return m[b.length][a.length]}
+function fuzzyMatch(a,b){const la=a.length,lb=b.length;if(la<3||lb<3)return a===b;const maxLen=Math.max(la,lb);const d=levDist(a,b);const allow=maxLen<=5?1:maxLen<=10?2:Math.floor(maxLen*0.2);return d<=allow}
+function fuzzyKws(s){return norm(s).split(/[\s,;:.()\-/]+/).filter(w=>w.length>1)}
 function checkAns(ur,cr,alts=[]){
   const u=norm(ur);if(!u)return false;
   for(const c of[cr,...alts]){const n=norm(c);if(u===n)return true;if(u.replace(/[\s,.\-;:()]/g,"")===n.replace(/[\s,.\-;:()]/g,""))return true;const us=strip(u),cs=strip(n);if(us&&cs&&us===cs)return true;if(us&&cs&&us.replace(/[\s,.\-;:()]/g,"")===cs.replace(/[\s,.\-;:()]/g,""))return true}
   for(const c of[cr,...alts]){const ck=kws(c);if(ck.length<=2)continue;const uk=kws(ur);let m=0;for(const k of ck){if(uk.some(u2=>u2===k||u2.startsWith(k.slice(0,-1))||k.startsWith(u2.slice(0,-1))))m++}if(m/ck.length>=.75&&m>=2)return true}
+  for(const c of[cr,...alts]){if(fuzzyMatch(u,norm(c)))return true;if(fuzzyMatch(strip(u),strip(norm(c))))return true;const uk=fuzzyKws(ur),ck=fuzzyKws(c);if(ck.length>=2&&uk.length>=2){let m=0;for(const k of ck){if(uk.some(u2=>fuzzyMatch(u2,k)))m++}if(m/ck.length>=.75&&m>=2)return true}}
   return false;
 }
 
