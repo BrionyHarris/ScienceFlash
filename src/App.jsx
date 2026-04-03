@@ -268,7 +268,7 @@ export default function App(){
   const uid=user?user.name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""):null;
   const [loginName,setLoginName]=useState("");
   const [loginLoading,setLoginLoading]=useState(false);
-const [listening,setListening]=useState(false);
+const [listening,setListening]=useState(false);const recogRef=useRef(null);
   function getPool(f=focus){
     if(!f)return TOPICS;
     if(f.type==="subject")return TOPICS.filter(t=>t.subject===f.id);
