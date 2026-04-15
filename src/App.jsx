@@ -12,8 +12,11 @@ async function sbSet(k, v) { await sbFetch("kv_store?on_conflict=key", { method:
 async function sbGet(k) { const r = await sbFetch(`kv_store?key=eq.${encodeURIComponent(k)}&select=value`); if(!r||!r.length) return null; try{return JSON.parse(r[0].value)}catch{return r[0].value} }
 async function sbList(prefix) { const r = await sbFetch(`kv_store?key=like.${encodeURIComponent(prefix+"%")}&select=key,value`); return r || []; }
 const PFX = "sci_progress_";
+const CQ_KEY = "sci_custom_questions";
 async function loadProgress(uid) { try{return await sbGet(PFX+uid)||{}}catch{return{}} }
 async function saveProgress(uid, p) { try{await sbSet(PFX+uid, p)}catch(e){console.error(e)} }
+async function loadCustomQs() { try{return await sbGet(CQ_KEY)||[]}catch{return[]} }
+async function saveCustomQs(qs) { try{await sbSet(CQ_KEY, qs)}catch(e){console.error(e)} }
 async function loadAllProgress() {
   try { const rows = await sbList(PFX); return rows.map(r => { const name = r.key.replace(PFX,"").replace(/_/g," "); let prog={}; try{prog=JSON.parse(r.value)}catch{} return {name,progress:prog}; }); } catch{return[]}
 }
@@ -267,25 +270,47 @@ export default function App(){
   const [parentData,setParentData]=useState(null);
   const [parentLoading,setParentLoading]=useState(false);
   const [parentExpanded,setParentExpanded]=useState(null);
+  const [customQs,setCustomQs]=useState([]);
+  const [customLoaded,setCustomLoaded]=useState(false);
+  const [aqTab,setAqTab]=useState("single");
+  const [aqSubject,setAqSubject]=useState("biology");
+  const [aqTopic,setAqTopic]=useState("");
+  const [aqNewTopic,setAqNewTopic]=useState("");
+  const [aqQ,setAqQ]=useState("");
+  const [aqA,setAqA]=useState("");
+  const [aqAlts,setAqAlts]=useState("");
+  const [aqHint,setAqHint]=useState("");
+  const [aqBulk,setAqBulk]=useState("");
+  const [aqMsg,setAqMsg]=useState(null);
+  const [aqSaving,setAqSaving]=useState(false);
   const inputRef=useRef(null);
   const recentQs=useRef([]);
   const uid=user?user.name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""):null;
   const [loginName,setLoginName]=useState("");
   const [loginLoading,setLoginLoading]=useState(false);
 const [listening,setListening]=useState(false);const recogRef=useRef(null);const micMode=useRef(false);
-  function startMic(){if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window))return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;const r=new SR();r.lang='en-GB';r.continuous=true;r.interimResults=true;recogRef.current=r;const baseText='';r.onstart=()=>setListening(true);r.onend=()=>{setListening(false);recogRef.current=null};r.onresult=e=>{let f='',i='';for(let x=0;x<e.results.length;x++){const t=e.results[x][0].transcript;if(e.results[x].isFinal)f+=t;else i+=t}const newText=f+i;setAnswer(prev=>{const base=prev.replace(/\s*\.{3}.*$/,'');return base?base.trim()+' '+newText.trim():newText.trim()})};r.onerror=()=>{setListening(false);recogRef.current=null};r.start()}
+  function startMic(){if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window))return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;const r=new SR();r.lang='en-GB';r.continuous=true;r.interimResults=true;recogRef.current=r;const baseText='';r.onstart=()=>setListening(true);r.onend=()=>{setListening(false);recogRef.current=null};r.onresult=e=>{let full='';for(let x=0;x<e.results.length;x++){full+=e.results[x][0].transcript}setAnswer(full.trim())};r.onerror=()=>{setListening(false);recogRef.current=null};r.start()}
   function stopMic(){if(recogRef.current){try{recogRef.current.stop()}catch(e){}recogRef.current=null;setListening(false)}}
+  function getAllTopics(cqs=customQs){
+    if(!cqs||!cqs.length)return TOPICS;
+    const merged=TOPICS.map(t=>{const extra=cqs.filter(q=>q.topicId===t.id);if(!extra.length)return t;return{...t,questions:[...t.questions,...extra.map(q=>({q:q.q,answer:q.answer,alts:q.alts||[],hint:q.hint||""}))]}});
+    const customTopicIds=[...new Set(cqs.filter(q=>q.customTopic).map(q=>q.topicId))];
+    const customTopics=customTopicIds.map(id=>{const tqs=cqs.filter(q=>q.topicId===id);const first=tqs[0];return{id,subject:first.subject||"biology",name:first.topicName||id,emoji:first.topicEmoji||"📝",color:first.topicColor||"#6366f1",questions:tqs.map(q=>({q:q.q,answer:q.answer,alts:q.alts||[],hint:q.hint||""}))}});
+    return[...merged,...customTopics];
+  }
   function getPool(f=focus){
-    if(!f)return TOPICS;
-    if(f.type==="subject")return TOPICS.filter(t=>t.subject===f.id);
-    if(f.type==="topics")return TOPICS.filter(t=>f.ids.includes(t.id));
+    const all=getAllTopics();
+    if(!f)return all;
+    if(f.type==="subject")return all.filter(t=>t.subject===f.id);
+    if(f.type==="topics")return all.filter(t=>f.ids.includes(t.id));
     return TOPICS;
   }
   function getFocusLabel(f=focus){
     if(!f)return null;
     if(f.type==="subject"){const s=SUBJECTS.find(s=>s.id===f.id);return s?`${s.emoji} ${s.name}`:null}
     if(f.type==="topics"){
-      if(f.ids.length===1){const t=TOPICS.find(t=>t.id===f.ids[0]);return t?`${t.emoji} ${t.name}`:null}
+      const all=getAllTopics();
+      if(f.ids.length===1){const t=all.find(t=>t.id===f.ids[0]);return t?`${t.emoji} ${t.name}`:null}
       return `${f.ids.length} topics selected`;
     }
     return null;
@@ -294,7 +319,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
     setSelected(prev=>{const n=new Set(prev);if(n.has(topicId))n.delete(topicId);else n.add(topicId);return n});
   }
   function selectSubject(subjectId){
-    const ids=TOPICS.filter(t=>t.subject===subjectId).map(t=>t.id);
+    const ids=getAllTopics().filter(t=>t.subject===subjectId).map(t=>t.id);
     setSelected(prev=>{const n=new Set(prev);const allSelected=ids.every(id=>n.has(id));ids.forEach(id=>{if(allSelected)n.delete(id);else n.add(id)});return n});
   }
   function startSelected(){
@@ -306,7 +331,8 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
     if(!loginName.trim())return;setLoginLoading(true);
     const name=loginName.trim(),id=name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");
     const prog=await loadProgress(id);
-    setUser({name,id});setProgress(prog);pickQuestion(prog,null);setScreen("quiz");setLoginLoading(false);
+    const cqs=await loadCustomQs();setCustomQs(cqs);setCustomLoaded(true);
+    setUser({name,id});setProgress(prog);pickQuestion(prog,null,cqs);setScreen("quiz");setLoginLoading(false);
   }
   async function openParent(){setParentLoading(true);setScreen("parent");const all=await loadAllProgress();setParentData(all);setParentLoading(false)}
   function pickQuestion(prog=progress,f=focus){
@@ -426,7 +452,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
 
   // ═══ PROGRESS ═══
   if(screen==="progress"){
-    const dc=TOPICS.filter(t=>isDue(progress[t.id])).length;
+    const dc=getAllTopics().filter(t=>isDue(progress[t.id])).length;
     return(
       <div style={wr}><link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
         <div style={{maxWidth:960,margin:"0 auto",width:"100%"}}>
@@ -436,11 +462,12 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
               {selected.size>0&&<button onClick={startSelected} style={{...b("#6366f1","white"),padding:"10px 20px",fontSize:"14px"}}>▶ Quiz {selected.size} topic{selected.size>1?"s":""}</button>}
               {selected.size>0&&<button onClick={()=>setSelected(new Set())} style={{...b("transparent",D.muted),padding:"10px 16px",fontSize:"13px",border:`1px solid ${D.border}`}}>Clear</button>}
               <button onClick={()=>{setFocus(null);setSelected(new Set());pickQuestion(progress,null);setScreen("quiz")}} style={b(D.accent,"#052e16")}>Quiz All</button>
+              <button onClick={()=>{const ft=getAllTopics().filter(t=>t.subject===aqSubject);setAqTopic(ft[0]?.id||"__new__");setAqMsg(null);setScreen("addqs")}} style={{...b("transparent",D.muted),padding:"10px 16px",fontSize:"13px",border:`1px solid ${D.border}`}}>➕ Add Questions</button>
             </div>
           </div>
 
           {selected.size>0&&<div style={{...cd,marginBottom:"16px",padding:"14px 20px",background:"#6366f122",borderColor:"#6366f144"}}>
-            <div style={{fontSize:"13px",color:"#a5b4fc",fontWeight:600}}>✅ Selected: {[...selected].map(id=>{const t=TOPICS.find(t=>t.id===id);return t?t.name:id}).join(", ")}</div>
+            <div style={{fontSize:"13px",color:"#a5b4fc",fontWeight:600}}>✅ Selected: {[...selected].map(id=>{const t=getAllTopics().find(t=>t.id===id);return t?t.name:id}).join(", ")}</div>
           </div>}
 
           <div style={{...cd,marginBottom:"24px",display:"flex",gap:"32px",justifyContent:"center",flexWrap:"wrap"}}>
@@ -450,7 +477,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
           </div>
 
           {SUBJECTS.map(sub=>{
-            const st=TOPICS.filter(t=>t.subject===sub.id);const tq=st.reduce((s,t)=>s+(progress[t.id]?.total||0),0);const tc=st.reduce((s,t)=>s+(progress[t.id]?.correct||0),0);const sd=st.filter(t=>isDue(progress[t.id])).length;
+            const st=getAllTopics().filter(t=>t.subject===sub.id);const tq=st.reduce((s,t)=>s+(progress[t.id]?.total||0),0);const tc=st.reduce((s,t)=>s+(progress[t.id]?.correct||0),0);const sd=st.filter(t=>isDue(progress[t.id])).length;
             const allSubSelected=st.every(t=>selected.has(t.id));const someSubSelected=st.some(t=>selected.has(t.id));
             return(
               <div key={sub.id} style={{marginBottom:"20px",borderRadius:"16px",overflow:"hidden",border:`1px solid ${D.border}`}}>
@@ -486,6 +513,142 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
               {LINKS.map((lk,i)=><a key={i} href={lk.url} target="_blank" rel="noopener noreferrer" style={{background:D.bg,borderRadius:"12px",padding:"14px 16px",border:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"12px",textDecoration:"none",color:D.text,transition:"all .15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=lk.color;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=D.border;e.currentTarget.style.transform="none"}}><span style={{fontSize:"24px"}}>{lk.emoji}</span><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:"13px",color:lk.color}}>{lk.name} ↗</div><div style={{fontSize:"11px",color:D.muted,marginTop:"2px"}}>{lk.desc}</div></div></a>)}
             </div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══ ADD QUESTIONS ═══
+  if(screen==="addqs"){
+    const allTopics=getAllTopics();
+    const subTopics=allTopics.filter(t=>t.subject===aqSubject);
+
+    async function addSingle(){
+      if(!aqQ.trim()||!aqA.trim()){setAqMsg({type:"err",text:"Question and answer are required"});return}
+      setAqSaving(true);
+      const isNew=aqTopic==="__new__";
+      const topicId=isNew?aqNewTopic.trim().toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""):aqTopic;
+      if(isNew&&!aqNewTopic.trim()){setAqMsg({type:"err",text:"Enter a topic name"});setAqSaving(false);return}
+      const newQ={q:aqQ.trim(),answer:aqA.trim(),alts:aqAlts.trim()?aqAlts.split(",").map(s=>s.trim()).filter(Boolean):[],hint:aqHint.trim(),topicId,subject:aqSubject,customTopic:isNew,topicName:isNew?aqNewTopic.trim():undefined,topicEmoji:isNew?"📝":undefined,topicColor:isNew?SUBJECTS.find(s=>s.id===aqSubject)?.color||"#6366f1":undefined,addedAt:new Date().toISOString()};
+      const updated=[...customQs,newQ];
+      await saveCustomQs(updated);setCustomQs(updated);
+      setAqQ("");setAqA("");setAqAlts("");setAqHint("");
+      setAqMsg({type:"ok",text:"Question added!"});setAqSaving(false);
+    }
+
+    async function addBulk(){
+      if(!aqBulk.trim()){setAqMsg({type:"err",text:"Paste some questions first"});return}
+      setAqSaving(true);
+      const lines=aqBulk.trim().split("\n").map(l=>l.trim()).filter(Boolean);
+      const parsed=[];let cur={};
+      for(const line of lines){
+        const lower=line.toLowerCase();
+        if(lower.startsWith("q:")||lower.startsWith("question:")){if(cur.q&&cur.answer)parsed.push(cur);cur={q:line.replace(/^(q|question):\s*/i,"").trim()}}
+        else if(lower.startsWith("a:")||lower.startsWith("answer:")){cur.answer=line.replace(/^(a|answer):\s*/i,"").trim()}
+        else if(lower.startsWith("h:")||lower.startsWith("hint:")){cur.hint=line.replace(/^(h|hint):\s*/i,"").trim()}
+        else if(lower.startsWith("alt:")||lower.startsWith("alts:")){cur.alts=line.replace(/^(alt|alts):\s*/i,"").split(",").map(s=>s.trim()).filter(Boolean)}
+        else if(cur.q&&!cur.answer){cur.answer=line}
+      }
+      if(cur.q&&cur.answer)parsed.push(cur);
+      if(!parsed.length){setAqMsg({type:"err",text:"Couldn't find any Q/A pairs. Use the format:\nQ: question\nA: answer"});setAqSaving(false);return}
+      const isNew=aqTopic==="__new__";
+      const topicId=isNew?aqNewTopic.trim().toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""):aqTopic;
+      if(isNew&&!aqNewTopic.trim()){setAqMsg({type:"err",text:"Enter a topic name"});setAqSaving(false);return}
+      const newQs=parsed.map(p=>({q:p.q,answer:p.answer,alts:p.alts||[],hint:p.hint||"",topicId,subject:aqSubject,customTopic:isNew,topicName:isNew?aqNewTopic.trim():undefined,topicEmoji:isNew?"📝":undefined,topicColor:isNew?SUBJECTS.find(s=>s.id===aqSubject)?.color||"#6366f1":undefined,addedAt:new Date().toISOString()}));
+      const updated=[...customQs,...newQs];
+      await saveCustomQs(updated);setCustomQs(updated);
+      setAqBulk("");
+      setAqMsg({type:"ok",text:`Added ${newQs.length} question${newQs.length>1?"s":""}!`});setAqSaving(false);
+    }
+
+    async function deleteCustomQ(idx){
+      const updated=customQs.filter((_,i)=>i!==idx);
+      await saveCustomQs(updated);setCustomQs(updated);
+      setAqMsg({type:"ok",text:"Question deleted"});
+    }
+
+    const inp={width:"100%",padding:"12px 14px",fontSize:"14px",background:D.bg,border:`1px solid ${D.border}`,borderRadius:"10px",color:D.text,fontFamily:D.font,marginBottom:"10px",boxSizing:"border-box"};
+    const lbl={fontSize:"12px",fontWeight:700,color:D.muted,marginBottom:"4px",display:"block"};
+    return(
+      <div style={wr}><link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
+        <div style={{maxWidth:700,margin:"0 auto",width:"100%"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"24px",flexWrap:"wrap",gap:"12px"}}>
+            <h2 style={{fontFamily:D.display,fontWeight:800,fontSize:"24px"}}>➕ Add Questions</h2>
+            <button onClick={()=>setScreen("progress")} style={{...b("transparent",D.muted),border:`1px solid ${D.border}`}}>← Back</button>
+          </div>
+
+          {/* Tabs */}
+          <div style={{display:"flex",gap:"4px",marginBottom:"20px"}}>
+            {[["single","✏️ Single"],["bulk","📋 Paste Bulk"],["manage","🗂️ My Questions"]].map(([id,label])=>
+              <button key={id} onClick={()=>{setAqTab(id);setAqMsg(null)}} style={{padding:"10px 18px",background:aqTab===id?"#6366f1":D.card,color:aqTab===id?"white":D.text,border:`1px solid ${aqTab===id?"#6366f1":D.border}`,borderRadius:"10px",fontFamily:D.font,fontWeight:700,fontSize:"13px",cursor:"pointer"}}>{label}</button>
+            )}
+          </div>
+
+          {/* Subject + Topic picker — shared by single and bulk */}
+          {aqTab!=="manage"&&<div style={{...cd,marginBottom:"16px"}}>
+            <label style={lbl}>Subject</label>
+            <div style={{display:"flex",gap:"8px",marginBottom:"14px"}}>
+              {SUBJECTS.map(s=><button key={s.id} onClick={()=>{setAqSubject(s.id);const ft=allTopics.filter(t=>t.subject===s.id);setAqTopic(ft[0]?.id||"__new__")}} style={{padding:"8px 16px",background:aqSubject===s.id?s.color+"33":D.bg,border:`1px solid ${aqSubject===s.id?s.color:D.border}`,borderRadius:"8px",color:aqSubject===s.id?s.color:D.muted,fontFamily:D.font,fontWeight:700,fontSize:"13px",cursor:"pointer"}}>{s.emoji} {s.name}</button>)}
+            </div>
+            <label style={lbl}>Topic</label>
+            <select value={aqTopic} onChange={e=>setAqTopic(e.target.value)} style={{...inp,cursor:"pointer"}}>
+              {subTopics.map(t=><option key={t.id} value={t.id}>{t.emoji} {t.name}</option>)}
+              <option value="__new__">➕ New topic...</option>
+            </select>
+            {aqTopic==="__new__"&&<input value={aqNewTopic} onChange={e=>setAqNewTopic(e.target.value)} placeholder="New topic name..." style={inp}/>}
+          </div>}
+
+          {/* Single question form */}
+          {aqTab==="single"&&<div style={cd}>
+            <label style={lbl}>Question</label>
+            <textarea value={aqQ} onChange={e=>setAqQ(e.target.value)} placeholder="e.g. What is the function of the mitochondria?" rows={2} style={{...inp,resize:"vertical"}}/>
+            <label style={lbl}>Answer</label>
+            <textarea value={aqA} onChange={e=>setAqA(e.target.value)} placeholder="e.g. To produce energy through aerobic respiration" rows={2} style={{...inp,resize:"vertical"}}/>
+            <label style={lbl}>Alternative answers <span style={{fontWeight:400,color:D.muted}}>(comma-separated, optional)</span></label>
+            <input value={aqAlts} onChange={e=>setAqAlts(e.target.value)} placeholder="e.g. produces energy, site of respiration" style={inp}/>
+            <label style={lbl}>Hint <span style={{fontWeight:400,color:D.muted}}>(optional)</span></label>
+            <input value={aqHint} onChange={e=>setAqHint(e.target.value)} placeholder="e.g. The powerhouse of the cell" style={inp}/>
+            <button onClick={addSingle} disabled={aqSaving} style={{...b(D.accent,"#052e16"),width:"100%",opacity:aqSaving?.6:1,marginTop:"6px"}}>{aqSaving?"Saving...":"Add Question"}</button>
+          </div>}
+
+          {/* Bulk paste */}
+          {aqTab==="bulk"&&<div style={cd}>
+            <div style={{background:D.bg,borderRadius:"10px",padding:"12px 16px",marginBottom:"14px",fontSize:"12px",color:D.muted,lineHeight:1.6}}>
+              Paste questions in this format:<br/>
+              <span style={{color:D.accent,fontWeight:700}}>Q:</span> What is osmosis?<br/>
+              <span style={{color:D.accent,fontWeight:700}}>A:</span> Movement of water from dilute to concentrated solution through a partially permeable membrane<br/>
+              <span style={{color:D.accent,fontWeight:700}}>H:</span> Think about water and membranes<br/>
+              <span style={{color:D.muted}}>(H: hint line is optional — repeat Q/A/H blocks for multiple questions)</span>
+            </div>
+            <textarea value={aqBulk} onChange={e=>setAqBulk(e.target.value)} placeholder={"Q: First question\nA: First answer\nH: Optional hint\n\nQ: Second question\nA: Second answer"} rows={10} style={{...inp,resize:"vertical",fontFamily:"monospace",fontSize:"13px"}}/>
+            <button onClick={addBulk} disabled={aqSaving} style={{...b(D.accent,"#052e16"),width:"100%",opacity:aqSaving?.6:1,marginTop:"6px"}}>{aqSaving?"Importing...":"Import Questions"}</button>
+          </div>}
+
+          {/* Manage existing custom questions */}
+          {aqTab==="manage"&&<div>
+            {customQs.length===0?<div style={{...cd,textAlign:"center",padding:"40px",color:D.muted}}>No custom questions yet — add some using the tabs above!</div>
+            :SUBJECTS.map(sub=>{
+              const subQs=customQs.map((q,i)=>({...q,_idx:i})).filter(q=>q.subject===sub.id);
+              if(!subQs.length)return null;
+              const byTopic={};subQs.forEach(q=>{const k=q.topicName||allTopics.find(t=>t.id===q.topicId)?.name||q.topicId;if(!byTopic[k])byTopic[k]=[];byTopic[k].push(q)});
+              return<div key={sub.id} style={{marginBottom:"16px"}}>
+                <div style={{fontWeight:800,fontSize:"14px",color:sub.color,marginBottom:"8px"}}>{sub.emoji} {sub.name}</div>
+                {Object.entries(byTopic).map(([tName,tQs])=><div key={tName} style={{...cd,marginBottom:"10px"}}>
+                  <div style={{fontWeight:700,fontSize:"13px",marginBottom:"10px",color:D.text}}>{tName}</div>
+                  {tQs.map(q=><div key={q._idx} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"8px 0",borderTop:`1px solid ${D.border}`}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:"13px",fontWeight:600}}>{q.q}</div>
+                      <div style={{fontSize:"12px",color:D.accent,marginTop:"2px"}}>{q.answer}</div>
+                    </div>
+                    <button onClick={()=>deleteCustomQ(q._idx)} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",padding:"4px",flexShrink:0}}>🗑️</button>
+                  </div>)}
+                </div>)}
+              </div>
+            })}
+          </div>}
+
+          {/* Feedback message */}
+          {aqMsg&&<div className="fadeIn" style={{marginTop:"16px",padding:"12px 16px",borderRadius:"10px",background:aqMsg.type==="ok"?"#22c55e22":"#ef444422",color:aqMsg.type==="ok"?"#22c55e":"#fca5a5",fontWeight:700,fontSize:"13px",whiteSpace:"pre-line"}}>{aqMsg.text}</div>}
         </div>
       </div>
     );
