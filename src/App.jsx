@@ -272,7 +272,9 @@ export default function App(){
   const uid=user?user.name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""):null;
   const [loginName,setLoginName]=useState("");
   const [loginLoading,setLoginLoading]=useState(false);
-const [listening,setListening]=useState(false);const recogRef=useRef(null);
+const [listening,setListening]=useState(false);const recogRef=useRef(null);const micMode=useRef(false);
+  function startMic(){if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window))return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;const r=new SR();r.lang='en-GB';r.continuous=true;r.interimResults=true;recogRef.current=r;const baseText='';r.onstart=()=>setListening(true);r.onend=()=>{setListening(false);recogRef.current=null};r.onresult=e=>{let f='',i='';for(let x=0;x<e.results.length;x++){const t=e.results[x][0].transcript;if(e.results[x].isFinal)f+=t;else i+=t}const newText=f+i;setAnswer(prev=>{const base=prev.replace(/\s*\.{3}.*$/,'');return base?base.trim()+' '+newText.trim():newText.trim()})};r.onerror=()=>{setListening(false);recogRef.current=null};r.start()}
+  function stopMic(){if(recogRef.current){try{recogRef.current.stop()}catch(e){}recogRef.current=null;setListening(false)}}
   function getPool(f=focus){
     if(!f)return TOPICS;
     if(f.type==="subject")return TOPICS.filter(t=>t.subject===f.id);
@@ -313,11 +315,12 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);
     do{q=pick(topic.questions);tries++}while(recentQs.current.includes(q.q)&&tries<15);
     recentQs.current=[...recentQs.current.slice(-8),q.q];
     setCurTopic(topic);setCurQ(q);setAnswer("");setFeedback(null);setShowHint(false);setAttempt(0);
-    setTimeout(()=>inputRef.current?.focus(),100);
+    setTimeout(()=>{inputRef.current?.focus();if(micMode.current)startMic()},300);
   }
   function startSubject(id){const f={type:"subject",id};setFocus(f);pickQuestion(progress,f);setSelected(new Set());setScreen("quiz")}
   function clearFocus(){setFocus(null);pickQuestion(progress,null)}
   async function submitAnswer(){
+    stopMic();
     if(!answer.trim()||(feedback&&feedback.type!=="tryagain"))return;
     const ok=checkAns(answer,curQ.answer,curQ.alts||[]);
     if(ok){
@@ -512,9 +515,9 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);
                 {feedback?.type==="tryagain"&&<div style={{background:"#f59e0b22",color:"#f59e0b",padding:"10px 14px",borderRadius:"10px",fontSize:"13px",marginBottom:"12px",fontWeight:600}}>{feedback.msg}</div>}
                 <textarea ref={inputRef} value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} placeholder={attempt===1?"Try again...":"Type your answer..."} rows={2} style={{width:"100%",padding:"14px",fontSize:"15px",background:D.bg,border:`2px solid ${attempt===1?"#f59e0b":D.border}`,borderRadius:"10px",color:D.text,fontFamily:D.font,resize:"none",marginBottom:"12px"}}/>
                 <div style={{display:"flex",gap:"8px"}}><button onClick={submitAnswer} style={{...b(D.accent,"#052e16"),flex:1}}>Check Answer</button>{!showHint&&<button onClick={()=>setShowHint(true)} style={{...b("transparent","#f59e0b"),border:"1px solid #f59e0b44",padding:"12px 16px"}}>💡</button>}
-<button onClick={()=>{if(listening&&recogRef.current){recogRef.current.stop();return}if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){alert('Speech not supported in this browser');return}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;const r=new SR();r.lang='en-GB';r.continuous=true;r.interimResults=true;recogRef.current=r;const baseText=answer;r.onstart=()=>setListening(true);r.onend=()=>{setListening(false);recogRef.current=null};r.onresult=e=>{let f='',i='';for(let x=0;x<e.results.length;x++){const t=e.results[x][0].transcript;if(e.results[x].isFinal)f+=t;else i+=t}const newText=f+i;setAnswer(baseText?baseText.trim()+' '+newText.trim():newText.trim())};r.onerror=()=>{setListening(false);recogRef.current=null};r.start()}} style={{...b("transparent",listening?"#ef4444":"#94a3b8"),border:`1px solid ${listening?"#ef444444":"#33415544"}`,padding:"12px 16px",animation:listening?"pulse 1s infinite":"none"}}>{listening?"⏹":"🎤"}</button></div>
-                </div>
-                ):(
+<button onClick={()=>{if(listening){stopMic();micMode.current=false;return}micMode.current=true;startMic()}} style={{...b("transparent",listening?"#ef4444":micMode.current?"#6366f1":"#94a3b8"),border:`1px solid ${listening?"#ef444444":micMode.current?"#6366f144":"#33415544"}`,padding:"12px 16px",animation:listening?"pulse 1s infinite":"none"}}>{listening?"⏹":"🎤"}</button></div>
+              </div>
+            ):(
               <div className="fadeIn">
                 <div style={{padding:"14px 18px",borderRadius:"10px",marginBottom:"14px",fontWeight:700,background:feedback.type==="correct"?"#22c55e22":"#ef444422",color:feedback.type==="correct"?"#22c55e":"#fca5a5",border:`1px solid ${feedback.type==="correct"?"#22c55e44":"#ef444444"}`,fontSize:feedback.type==="wrong"?"14px":"15px",lineHeight:1.5}}>{feedback.msg}</div>
                 <button onClick={()=>pickQuestion(progress,focus)} style={{...b(D.accent,"#052e16"),width:"100%"}}>Next Question →</button>
