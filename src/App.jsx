@@ -270,6 +270,10 @@ export default function App(){
   const [parentData,setParentData]=useState(null);
   const [parentLoading,setParentLoading]=useState(false);
   const [parentExpanded,setParentExpanded]=useState(null);
+  const [mergeMode,setMergeMode]=useState(false);
+  const [mergeSelected,setMergeSelected]=useState(new Set());
+  const [mergeTarget,setMergeTarget]=useState("");
+  const [mergeBusy,setMergeBusy]=useState(false);
   const [customQs,setCustomQs]=useState([]);
   const [customLoaded,setCustomLoaded]=useState(false);
   const [aqTab,setAqTab]=useState("single");
@@ -394,8 +398,35 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
         <div style={{maxWidth:960,margin:"0 auto",width:"100%"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"24px",flexWrap:"wrap",gap:"12px"}}>
             <h2 style={{fontFamily:D.display,fontWeight:800,fontSize:"24px"}}>👨‍👩‍👦 Parent Dashboard</h2>
-            <button onClick={()=>setScreen("login")} style={{...b("transparent",D.muted),border:`1px solid ${D.border}`}}>← Back</button>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+              {!mergeMode&&parentData&&parentData.length>1&&<button onClick={()=>{setMergeMode(true);setMergeSelected(new Set());setMergeTarget("")}} style={{...b("transparent","#6366f1"),border:`1px solid #6366f144`,padding:"10px 16px",fontSize:"13px"}}>🔀 Merge accounts</button>}
+              {mergeMode&&<button onClick={()=>{setMergeMode(false);setMergeSelected(new Set());setMergeTarget("")}} style={{...b("transparent",D.muted),border:`1px solid ${D.border}`,padding:"10px 16px",fontSize:"13px"}}>✕ Cancel merge</button>}
+              <button onClick={()=>setScreen("login")} style={{...b("transparent",D.muted),border:`1px solid ${D.border}`}}>← Back</button>
+            </div>
           </div>
+
+          {mergeMode&&<div style={{...cd,marginBottom:"16px",padding:"16px 20px",background:"#6366f122",borderColor:"#6366f144"}}>
+            <div style={{fontSize:"13px",fontWeight:700,color:"#a5b4fc",marginBottom:"10px"}}>🔀 Merge mode: tick 2 or more students, then choose which name to keep.</div>
+            {mergeSelected.size>=2&&<div style={{marginTop:"10px"}}>
+              <div style={{fontSize:"12px",color:D.muted,marginBottom:"6px"}}>Keep under name:</div>
+              <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"10px"}}>
+                {[...mergeSelected].map(name=><button key={name} onClick={()=>setMergeTarget(name)} style={{padding:"8px 14px",background:mergeTarget===name?"#6366f1":D.bg,color:mergeTarget===name?"white":D.text,border:`1px solid ${mergeTarget===name?"#6366f1":D.border}`,borderRadius:"8px",fontFamily:D.font,fontWeight:700,fontSize:"13px",cursor:"pointer",textTransform:"capitalize"}}>{name}</button>)}
+              </div>
+              {mergeTarget&&<button disabled={mergeBusy} onClick={async()=>{
+                if(!confirm(`Merge ${mergeSelected.size} accounts into "${mergeTarget}"? The other accounts will be deleted.`))return;
+                setMergeBusy(true);
+                const names=[...mergeSelected];
+                const merged={};
+                for(const n of names){const s=parentData.find(x=>x.name===n);if(!s)continue;for(const[tid,tp] of Object.entries(s.progress||{})){const ex=merged[tid];if(!ex){merged[tid]={...tp}}else{merged[tid]={correct:(ex.correct||0)+(tp.correct||0),total:(ex.total||0)+(tp.total||0),interval:Math.max(ex.interval||1,tp.interval||1),lastSeen:(!ex.lastSeen||(tp.lastSeen&&new Date(tp.lastSeen)>new Date(ex.lastSeen)))?tp.lastSeen:ex.lastSeen,nextDate:(!ex.nextDate||(tp.nextDate&&new Date(tp.nextDate)<new Date(ex.nextDate)))?tp.nextDate:ex.nextDate}}}}
+                const targetId=mergeTarget.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");
+                await saveProgress(targetId,merged);
+                for(const n of names){if(n===mergeTarget)continue;const id=n.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");await sbFetch(`kv_store?key=eq.${encodeURIComponent(PFX+id)}`,{method:"DELETE"})}
+                const fresh=await loadAllProgress();setParentData(fresh);
+                setMergeMode(false);setMergeSelected(new Set());setMergeTarget("");setMergeBusy(false);
+              }} style={{...b("#6366f1","white"),opacity:mergeBusy?.6:1}}>{mergeBusy?"Merging...":`✓ Merge into "${mergeTarget}"`}</button>}
+            </div>}
+          </div>}
+
           {parentLoading?<div style={{textAlign:"center",padding:"60px",color:D.muted}}>⏳ Loading...</div>
           :!parentData||parentData.length===0?<div style={{...cd,textAlign:"center",padding:"40px"}}><p style={{color:D.muted}}>📭 No students yet.</p></div>
           :<div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
@@ -406,10 +437,11 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
               const dueN=TOPICS.filter(t=>isDue(prog[t.id])).length;
               const lastActive=TOPICS.reduce((l,t)=>{const ls=prog[t.id]?.lastSeen;return ls&&(!l||new Date(ls)>new Date(l))?ls:l},null);
               const isExp=parentExpanded===si;
-              return(<div key={si} style={{borderRadius:"16px",overflow:"hidden",border:`1px solid ${D.border}`}}>
-                <div onClick={()=>setParentExpanded(isExp?null:si)} style={{background:D.card,padding:"20px 24px",cursor:"pointer",transition:"background .15s"}} onMouseEnter={e=>e.currentTarget.style.background=D.border} onMouseLeave={e=>e.currentTarget.style.background=D.card}>
+              return(<div key={si} style={{borderRadius:"16px",overflow:"hidden",border:`1px solid ${mergeMode&&mergeSelected.has(student.name)?"#6366f1":D.border}`}}>
+                <div onClick={()=>{if(mergeMode){setMergeSelected(prev=>{const n=new Set(prev);if(n.has(student.name)){n.delete(student.name);if(mergeTarget===student.name)setMergeTarget("")}else n.add(student.name);return n})}else{setParentExpanded(isExp?null:si)}}} style={{background:mergeMode&&mergeSelected.has(student.name)?"#6366f122":D.card,padding:"20px 24px",cursor:"pointer",transition:"background .15s"}} onMouseEnter={e=>{if(!(mergeMode&&mergeSelected.has(student.name)))e.currentTarget.style.background=D.border}} onMouseLeave={e=>{e.currentTarget.style.background=mergeMode&&mergeSelected.has(student.name)?"#6366f122":D.card}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
+                      {mergeMode&&<div style={{width:"22px",height:"22px",borderRadius:"6px",border:`2px solid ${mergeSelected.has(student.name)?"#6366f1":D.border}`,background:mergeSelected.has(student.name)?"#6366f1":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",color:"white",flexShrink:0}}>{mergeSelected.has(student.name)?"✓":""}</div>}
                       <div style={{width:"48px",height:"48px",borderRadius:"50%",background:`linear-gradient(135deg,${D.accent},#06b6d4)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",fontWeight:800,color:"#052e16"}}>{student.name.charAt(0).toUpperCase()}</div>
                       <div><div style={{fontWeight:800,fontSize:"18px",fontFamily:D.display,textTransform:"capitalize"}}>{student.name}</div><div style={{fontSize:"12px",color:D.muted}}>{lastActive?`Last active: ${new Date(lastActive).toLocaleDateString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}`:"Not started"}</div></div>
                     </div>
