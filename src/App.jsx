@@ -419,6 +419,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
                       <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px"}}>{topicsDone}/{TOPICS.length}</div><div style={{fontSize:"10px",color:D.muted}}>Topics</div></div>
                       <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:"#22c55e"}}>{confN}</div><div style={{fontSize:"10px",color:D.muted}}>Confident</div></div>
                       <span style={{fontSize:"18px",color:D.muted,transition:"transform .2s",transform:isExp?"rotate(180deg)":"none"}}>▼</span>
+                      <button onClick={async(e)=>{e.stopPropagation();if(!confirm("Delete all data for "+student.name+"? This cannot be undone."))return;const key=PFX+student.name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");await sbFetch(`kv_store?key=eq.${encodeURIComponent(key)}`,{method:"DELETE"});setParentData(prev=>prev.filter(s=>s.name!==student.name))}} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",padding:"4px 8px",opacity:.5,transition:"opacity .15s"}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.5} title="Delete student">🗑️</button>
                     </div>
                   </div>
                 </div>
