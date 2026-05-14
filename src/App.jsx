@@ -819,7 +819,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
             ):(
               <div className="fadeIn">
                 <div style={{padding:"14px 18px",borderRadius:"10px",marginBottom:"14px",fontWeight:700,background:feedback.type==="correct"?"#22c55e22":"#ef444422",color:feedback.type==="correct"?"#22c55e":"#fca5a5",border:`1px solid ${feedback.type==="correct"?"#22c55e44":"#ef444444"}`,fontSize:feedback.type==="wrong"?"14px":"15px",lineHeight:1.5}}>{feedback.msg}</div>
-                <button onClick={()=>pickQuestion(progress,focus)} style={{...b(D.accent,"#052e16"),width:"100%"}}>Next Question →</button>
+               <button autoFocus onClick={()=>pickQuestion(progress,focus)} onKeyDown={e=>{if(e.key==="Enter")pickQuestion(progress,focus)}} style={{...b(D.accent,"#052e16"),width:"100%"}}>Next Question →</button>
               </div>
             )}
           </div>
