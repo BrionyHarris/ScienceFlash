@@ -8,6 +8,11 @@ async function sbFetch(path, opts = {}) {
   const r = await fetch(`${SB_URL}/rest/v1/${path}`, { ...opts, headers: { "apikey":SB_KEY, "Authorization":`Bearer ${SB_KEY}`, "Content-Type":"application/json", ...opts.headers } });
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
+async function sbDelete(k) {
+  const r = await fetch(`${SB_URL}/rest/v1/kv_store?key=eq.${encodeURIComponent(k)}`, { method:"DELETE", headers:{ "apikey":SB_KEY, "Authorization":`Bearer ${SB_KEY}`, "Prefer":"return=representation" } });
+  const t = await r.text(); let data=null; try{data=t?JSON.parse(t):null}catch{}
+  return { ok: r.ok, status: r.status, deleted: Array.isArray(data)?data.length:0, body: t };
+}
 async function sbSet(k, v) { await sbFetch("kv_store?on_conflict=key", { method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=representation"}, body:JSON.stringify({key:k,value:JSON.stringify(v)}) }); }
 async function sbGet(k) { const r = await sbFetch(`kv_store?key=eq.${encodeURIComponent(k)}&select=value`); if(!r||!r.length) return null; try{return JSON.parse(r[0].value)}catch{return r[0].value} }
 async function sbList(prefix) { const r = await sbFetch(`kv_store?key=like.${encodeURIComponent(prefix+"%")}&select=key,value`); return r || []; }
@@ -76,6 +81,29 @@ const TOPICS = [
     {q:"What colour does hydrogen carbonate indicator turn in high CO2?",answer:"Yellow",alts:[],hint:"CO2 makes it more acidic"},
     {q:"What colour does hydrogen carbonate indicator turn in low CO2?",answer:"Purple",alts:[],hint:"Less CO2 = less acidic"},
     {q:"What is transpiration?",answer:"The loss of water from a plant's leaves by evaporation and diffusion",alts:["evaporation of water from leaves","loss of water from leaves"],hint:"Water escapes through stomata"},
+    {q:"What happens to transpiration when it gets warmer?",answer:"It gets faster because water particles have more energy to evaporate",alts:["it increases"],hint:"Think about what warmth does to evaporation"},
+    {q:"What happens to transpiration when humidity is high?",answer:"It decreases because there is less difference in water concentration between inside and outside the leaf",alts:["it decreases","it slows down"],hint:"Diffusion is fastest when there's a big difference"},
+    {q:"What happens to transpiration rate when wind speed is low?",answer:"It decreases because water vapour surrounds the leaf and doesn't move away",alts:["it decreases"],hint:"The vapour builds up around the leaf"},
+    {q:"What piece of apparatus measures transpiration rate?",answer:"A potometer",alts:["potometer"],hint:"It actually measures water uptake"},
+    {q:"Why do stomata close in the dark?",answer:"Photosynthesis can't happen in the dark so they don't need to be open for CO2",alts:["no photosynthesis in the dark"],hint:"What process needs open stomata?"},
+    {q:"What happens to transpiration when stomata close?",answer:"Very little water can escape",alts:["transpiration decreases","it stops"],hint:"Stomata are the main exit for water"},
+    {q:"During the day, do plants take in or release more CO2?",answer:"They take in more CO2 because photosynthesis uses more than respiration produces",alts:["take in more CO2"],hint:"Photosynthesis dominates in daylight"},
+    {q:"At night, what gases do plants exchange?",answer:"They take in oxygen and release carbon dioxide, just like animals",alts:["take in oxygen, release CO2"],hint:"Only respiration happens at night"},
+    {q:"Why are leaves broad and flat?",answer:"To provide a large surface area for diffusion and light absorption",alts:["large surface area"],hint:"More area means more gas exchange"},
+    {q:"Why are leaves thin?",answer:"So gases only have to travel a short distance to reach cells",alts:["short diffusion distance"],hint:"Short diffusion distance"},
+    {q:"What are the air spaces inside a leaf for?",answer:"They let gases like CO2 and O2 move easily between cells and increase surface area for gas exchange",alts:["gas exchange between cells"],hint:"Gaps between the spongy mesophyll cells"},
+    {q:"Why do stomata close when water supplies are low?",answer:"To stop the plant drying out, even though this stops photosynthesis",alts:["to prevent water loss"],hint:"Survival is more important than making food"},
+    {q:"What controls the opening and closing of stomata?",answer:"Guard cells which change shape and volume",alts:["guard cells"],hint:"They swell to open and shrink to close"},
+    {q:"What do xylem vessels transport?",answer:"Water and mineral ions up from the roots",alts:["water and minerals"],hint:"Dead cells with lignin walls"},
+    {q:"What do phloem vessels transport?",answer:"Sucrose and amino acids up and down the plant",alts:["sugars and amino acids"],hint:"Made of living cells with sieve plates"},
+    {q:"What is the transpiration stream?",answer:"The continuous movement of water up the xylem from roots to leaves, pulled by water loss during transpiration",alts:["continuous movement of water up the xylem"],hint:"Water is pulled upwards"},
+    {q:"Name three functions of the transpiration stream.",answer:"Supplies water for photosynthesis, carries mineral ions to leaves, keeps cells turgid",alts:["water for photosynthesis, mineral transport, keeps cells turgid"],hint:"Water does several jobs on its journey up"},
+    {q:"How are root hair cells adapted for absorbing water?",answer:"Large surface area and lots of mitochondria for active transport of minerals",alts:["large surface area"],hint:"Long thin extensions increase the surface"},
+    {q:"How does water enter a root hair cell?",answer:"By osmosis from high water potential in the soil to low water potential in the cell",alts:["by osmosis"],hint:"Water moves down the concentration gradient"},
+    {q:"How do mineral ions enter the root?",answer:"By active transport against the concentration gradient using energy",alts:["active transport"],hint:"The opposite direction to normal diffusion"},
+    {q:"What is the difference between xylem and phloem structure?",answer:"Xylem is made of dead cells with lignin and no sieve plates; phloem is made of living cells with sieve plates",alts:["xylem dead with lignin, phloem living with sieve plates"],hint:"One is dead and strong, the other is alive"},
+    {q:"What is a vascular bundle?",answer:"The grouping of xylem and phloem together in a root or stem",alts:["xylem and phloem grouped together"],hint:"The plant's transport pipes bundled together"},
+    {q:"Why does increasing light intensity increase transpiration?",answer:"Stomata open wider in bright light to let in more CO2 for photosynthesis, which lets more water escape",alts:["stomata open more in bright light"],hint:"More light means more open stomata"},
   ]},
   {id:"blood_immunity",subject:"biology",name:"Blood & Immunity",emoji:"🩸",color:"#dc2626",questions:[
     {q:"What are the four components of blood?",answer:"Plasma, red blood cells, white blood cells, platelets",alts:["red blood cells, white blood cells, platelets, plasma"],hint:"A liquid, two cell types, cell fragments"},
@@ -85,6 +113,19 @@ const TOPICS = [
     {q:"How do lymphocytes destroy pathogens?",answer:"They produce antibodies that bind to antigens",alts:["produce antibodies"],hint:"Proteins that lock onto invaders"},
     {q:"What is the function of platelets?",answer:"Form blood clots",alts:["clot the blood","blood clotting"],hint:"What happens when you get a cut?"},
     {q:"What is the active ingredient in a vaccination?",answer:"A dead or inactive pathogen",alts:["dead pathogen","inactive pathogen"],hint:"Triggers immunity without disease"},
+    {q:"What is plasma?",answer:"The pale yellow liquid part of blood that carries everything",alts:["liquid part of blood"],hint:"It's basically blood minus the cells"},
+    {q:"Name four things that plasma transports.",answer:"Red and white blood cells, digested food products, carbon dioxide, urea, hormones, heat energy",alts:["blood cells, food, CO2, urea, hormones, heat"],hint:"It carries almost everything around the body"},
+    {q:"What protein holds a blood clot together?",answer:"Fibrin",alts:[],hint:"Forms a mesh of protein"},
+    {q:"Why do red blood cells have a biconcave shape?",answer:"To give a large surface area for absorbing and releasing oxygen",alts:["large surface area for oxygen"],hint:"Think about what shape increases surface area"},
+    {q:"Why don't red blood cells have a nucleus?",answer:"To free up space for more haemoglobin so they can carry more oxygen",alts:["more room for haemoglobin"],hint:"More room for the oxygen-carrying molecule"},
+    {q:"What are antigens?",answer:"Unique molecules on the surface of every pathogen",alts:["molecules on pathogen surface"],hint:"They trigger an immune response"},
+    {q:"What are memory cells?",answer:"White blood cells that remember a specific antigen and can reproduce quickly if the same pathogen returns",alts:["cells that remember antigens"],hint:"Why you're immune after the first infection"},
+    {q:"How does vaccination work?",answer:"Dead or inactive pathogens are injected, lymphocytes produce antibodies, and memory cells are made without the person getting ill",alts:["inject dead pathogen, body makes antibodies and memory cells"],hint:"Triggers immunity without the disease"},
+    {q:"Name four substances that need to move in and out of cells.",answer:"Oxygen, carbon dioxide, glucose, urea",alts:["O2, CO2, glucose, urea"],hint:"Two gases and two dissolved substances"},
+    {q:"Why do multicellular organisms need a transport system?",answer:"They are large with a low surface area to volume ratio and long diffusion pathways",alts:["too big for diffusion alone"],hint:"Too big for diffusion alone"},
+    {q:"What are the three components of the circulatory system?",answer:"Blood, blood vessels, and the heart",alts:["blood, blood vessels, heart"],hint:"The liquid, the tubes, and the pump"},
+    {q:"Why are blood clots important for defence?",answer:"They prevent blood loss and stop pathogens entering through wounds",alts:["prevent blood loss and infection"],hint:"Seal the gap quickly"},
+    {q:"What happens when someone is infected by a pathogen they are vaccinated against?",answer:"Memory cells quickly produce a large quantity of antibodies to fight the pathogen",alts:["memory cells produce antibodies quickly"],hint:"The body remembers and responds faster"},
   ]},
   {id:"heart",subject:"biology",name:"The Heart",emoji:"❤️",color:"#be123c",questions:[
     {q:"What is the function of the heart?",answer:"To pump blood around the body",alts:["pump blood"],hint:"Muscular pump"},
@@ -95,6 +136,17 @@ const TOPICS = [
     {q:"Which vessel carries blood from heart to lungs?",answer:"The pulmonary artery",alts:["pulmonary artery"],hint:"Pulmonary = lungs"},
     {q:"Which vessel carries blood from heart to body?",answer:"The aorta",alts:["aorta"],hint:"Largest artery"},
     {q:"What hormone causes heart rate to increase?",answer:"Adrenaline",alts:["adrenalin"],hint:"Fight or flight"},
+    {q:"Name the four chambers of the heart.",answer:"Right atrium, right ventricle, left atrium, left ventricle",alts:["left atrium, left ventricle, right atrium, right ventricle"],hint:"Two atria on top, two ventricles below"},
+    {q:"Which chamber receives deoxygenated blood from the body?",answer:"The right atrium",alts:["right atrium"],hint:"Blood returns via the vena cava"},
+    {q:"Which vessel carries oxygenated blood from the lungs to the heart?",answer:"The pulmonary vein",alts:["pulmonary vein"],hint:"The exception — a vein carrying oxygenated blood"},
+    {q:"What is coronary heart disease?",answer:"When the coronary arteries get blocked by layers of fatty material building up",alts:["blocked coronary arteries"],hint:"Fatty deposits in the heart's own blood supply"},
+    {q:"Name three risk factors for coronary heart disease.",answer:"High saturated fat diet, smoking, being inactive",alts:["diet, smoking, inactivity"],hint:"Lifestyle choices"},
+    {q:"How does exercise affect heart rate?",answer:"It increases because muscles need more oxygen and energy",alts:["it increases"],hint:"More activity means more demand"},
+    {q:"How does the body detect that more CO2 is in the blood during exercise?",answer:"Receptors in the aorta and carotid artery detect high CO2 levels",alts:["receptors in aorta and carotid artery"],hint:"Special sensors in major blood vessels"},
+    {q:"How does adrenaline affect the heart?",answer:"It binds to receptors on the heart causing it to contract more frequently and with more force",alts:["makes heart beat faster and harder"],hint:"Fight or flight hormone"},
+    {q:"What separates the left and right sides of the heart?",answer:"The septum",alts:["septum"],hint:"A wall of muscle down the middle"},
+    {q:"Which valve separates the right atrium and right ventricle?",answer:"The tricuspid valve",alts:["tricuspid"],hint:"Tri means three — it has three flaps"},
+    {q:"What is the difference between blood on the right and left side of the heart?",answer:"Right side has deoxygenated blood, left side has oxygenated blood",alts:["right deoxygenated, left oxygenated"],hint:"Right goes to lungs, left goes to body"},
   ]},
   {id:"blood_vessels",subject:"biology",name:"Blood Vessels",emoji:"🔴",color:"#ea580c",questions:[
     {q:"Name the three types of blood vessel.",answer:"Arteries, veins, capillaries",alts:["arteries, capillaries, veins"],hint:"Away, back, through tissues"},
@@ -104,6 +156,11 @@ const TOPICS = [
     {q:"Why are capillary walls only one cell thick?",answer:"Short diffusion distance for exchanging substances",alts:["short diffusion distance"],hint:"Substances pass through walls"},
     {q:"What does 'hepatic' mean?",answer:"Related to the liver",alts:["to do with the liver","liver"],hint:"Think hepatitis"},
     {q:"What does 'renal' mean?",answer:"Related to the kidneys",alts:["to do with the kidneys","kidneys"],hint:"Renal failure = kidney failure"},
+    {q:"Why do capillaries have permeable walls?",answer:"So substances like food and oxygen can diffuse in and out",alts:["so substances can diffuse through"],hint:"Things need to pass through"},
+    {q:"Why do veins have a bigger lumen than arteries?",answer:"To help blood flow at lower pressure",alts:["to allow blood flow at low pressure"],hint:"Less pressure needs a wider opening"},
+    {q:"What is the largest artery in the body?",answer:"The aorta",alts:["aorta"],hint:"Carries blood from the heart to the body"},
+    {q:"What is the largest vein in the body?",answer:"The vena cava",alts:["vena cava"],hint:"Carries blood back to the heart"},
+    {q:"What does pulmonary mean?",answer:"Related to the lungs",alts:["to do with the lungs","lungs"],hint:"Pulmonary artery goes to the lungs"},
   ]},
   {id:"eye",subject:"biology",name:"The Eye",emoji:"👁️",color:"#7c3aed",questions:[
     {q:"What is the function of the cornea?",answer:"Refracts (bends) light into the eye",alts:["refracts light","bends light"],hint:"Transparent front part"},
@@ -113,6 +170,21 @@ const TOPICS = [
     {q:"For far objects, what shape does the lens become?",answer:"Thinner",alts:["thin","flat","flatter"],hint:"Less refraction needed"},
     {q:"In bright light, which iris muscles contract?",answer:"Circular muscles",alts:["the circular muscles"],hint:"Make pupil smaller"},
     {q:"In dim light, which iris muscles contract?",answer:"Radial muscles",alts:["the radial muscles"],hint:"Pull pupil open wider"},
+    {q:"What does the conjunctiva do?",answer:"Lubricates and protects the surface of the eye",alts:["protects the eye surface"],hint:"A protective membrane"},
+    {q:"What does the sclera do?",answer:"It is the tough outer layer that protects the eye",alts:["protects the eye"],hint:"The white of the eye"},
+    {q:"What does the iris do?",answer:"Controls the diameter of the pupil to regulate how much light enters",alts:["controls pupil size"],hint:"The coloured part"},
+    {q:"What does the retina do?",answer:"Contains light-sensitive receptors called rods and cones",alts:["detects light"],hint:"Where the image is formed"},
+    {q:"What is the difference between rods and cones?",answer:"Rods are sensitive in dim light but can't sense colour, cones sense colour but aren't good in dim light",alts:["rods for dim light, cones for colour"],hint:"One for dark, one for colour"},
+    {q:"Where are most cones found?",answer:"At the fovea",alts:["the fovea"],hint:"The centre of the retina"},
+    {q:"What does the optic nerve do?",answer:"Carries impulses from the receptors in the retina to the brain",alts:["carries signals from retina to brain"],hint:"The connection from eye to brain"},
+    {q:"For near objects, what happens to the suspensory ligaments?",answer:"They slacken",alts:["they go slack","loosen"],hint:"Ciliary muscles contract and release tension"},
+    {q:"What is short-sightedness?",answer:"When you can see near objects clearly but not distant objects",alts:["can't see far away"],hint:"The image focuses in front of the retina"},
+    {q:"What is long-sightedness?",answer:"When you can see distant objects clearly but not near objects",alts:["can't see close up"],hint:"The image focuses behind the retina"},
+    {q:"What is the function of the choroid?",answer:"It supplies the eye tissues with oxygen and glucose via blood vessels, and its pigment prevents light reflecting inside the eye",alts:["blood supply and prevents internal reflection"],hint:"Nutrition and stopping internal reflections"},
+    {q:"Why is it important that pupils constrict quickly in bright light?",answer:"To prevent light damaging the retina",alts:["to protect the retina"],hint:"Too much light is harmful"},
+    {q:"In bright light, what happens to the iris muscles?",answer:"Circular muscles contract and radial muscles relax, causing the pupil to constrict",alts:["circular contract, radial relax"],hint:"Circular squeeze the pupil smaller"},
+    {q:"In dim light, what happens to the iris muscles?",answer:"Radial muscles contract and circular muscles relax, causing the pupil to dilate",alts:["radial contract, circular relax"],hint:"Radial pull the pupil open"},
+    {q:"When focusing on a near object, what happens to the ciliary muscles and lens?",answer:"Ciliary muscles contract, suspensory ligaments slacken, and the lens becomes rounder and thicker",alts:["ciliary muscles contract, lens gets fatter"],hint:"Muscles tighten, ligaments loosen, lens fattens"},
   ]},
   {id:"reflexes",subject:"biology",name:"Reflexes & Nervous System",emoji:"⚡",color:"#0891b2",questions:[
     {q:"What is a stimulus?",answer:"A change in the environment",alts:[],hint:"Triggers a response"},
@@ -121,7 +193,22 @@ const TOPICS = [
     {q:"What are synapses?",answer:"Gaps between neurones",alts:["junctions between neurones"],hint:"Signals must cross these"},
     {q:"How do signals cross a synapse?",answer:"Neurotransmitters diffuse across the gap",alts:["by neurotransmitters"],hint:"Chemical messengers"},
     {q:"What is a reflex action?",answer:"A rapid, automatic, involuntary response to a stimulus",alts:["an automatic response"],hint:"You don't think about it"},
-    {q:"What is homeostasis?",answer:"The maintenance of a constant internal environment",alts:["keeping internal conditions constant"],hint:"Keeping things balanced"},
+    {q:"What is homeostasis?",answer:"The maintenance of a constant internal environment to maintain optimal cell function",alts:["keeping internal conditions constant"],hint:"Keeping things balanced"},
+    {q:"What are receptors?",answer:"Groups of cells that detect stimuli in sense organs like eyes, ears, nose, tongue and skin",alts:["cells that detect stimuli"],hint:"They detect changes in the environment"},
+    {q:"What are effectors?",answer:"Cells that carry out a response — muscle cells and gland cells",alts:["muscles and glands"],hint:"Muscles contract, glands secrete"},
+    {q:"What is a reflex arc?",answer:"The pathway from receptor to effector in a reflex: stimulus, receptor, sensory neurone, CNS, relay neurone, motor neurone, effector, response",alts:["the nerve pathway of a reflex"],hint:"The route a reflex signal takes"},
+    {q:"Why are reflex actions faster than normal responses?",answer:"Because they don't involve the conscious part of the brain so you don't have to think",alts:["they bypass the conscious brain"],hint:"Automatic means quicker"},
+    {q:"What is the correct order of neurones in a reflex arc?",answer:"Sensory neurone, relay neurone, motor neurone",alts:["sensory, relay, motor"],hint:"Sense it, relay it, move it"},
+    {q:"What are the two communication systems in the human body?",answer:"The nervous system and the endocrine system",alts:["nervous and endocrine"],hint:"One uses electrical impulses, one uses hormones"},
+    {q:"How does the nervous system send information?",answer:"As electrical impulses along neurones",alts:["electrical impulses"],hint:"Fast electrical signals"},
+    {q:"How does the endocrine system send information?",answer:"As hormones through the blood stream",alts:["hormones in the blood"],hint:"Chemical messengers in the blood"},
+    {q:"Which system produces faster responses — nervous or endocrine?",answer:"The nervous system — its responses are rapid but short-lived",alts:["nervous system"],hint:"Electrical is faster than chemical"},
+    {q:"What is the peripheral nervous system?",answer:"All the neurones in the body outside the CNS",alts:["neurones outside the brain and spinal cord"],hint:"Everything except the brain and spinal cord"},
+    {q:"Why do neurones have lots of dendrons and dendrites?",answer:"So they can connect to many other neurones to transmit information",alts:["to connect to many neurones"],hint:"More connections means better communication"},
+    {q:"What are neurotransmitters?",answer:"Chemicals produced in the presynaptic neurone that carry signals across synapses",alts:["chemicals that cross synapses"],hint:"Chemical messengers that cross the gap"},
+    {q:"Describe how a signal crosses a synapse.",answer:"The impulse arrives, neurotransmitters are released into the synaptic cleft, they diffuse across and bind to receptors on the postsynaptic neurone triggering a new impulse",alts:["neurotransmitters released, diffuse across, bind to receptors"],hint:"Release, diffuse, bind, fire"},
+    {q:"Why is it important that reflex actions are rapid and involuntary?",answer:"To reduce the chance of a stimulus damaging the body",alts:["to prevent damage"],hint:"No time to think when danger is near"},
+    {q:"Name two examples of homeostasis in humans.",answer:"Maintenance of constant body temperature and constant water concentration in the blood",alts:["body temperature and water balance"],hint:"Temperature and water balance"},
   ]},
   {id:"photosynthesis",subject:"biology",name:"Photosynthesis",emoji:"🌱",color:"#15803d",questions:[
     {q:"What are the reactants of photosynthesis?",answer:"Carbon dioxide and water",alts:["CO2 and water"],hint:"What goes IN"},
@@ -132,6 +219,22 @@ const TOPICS = [
     {q:"What chemical tests a leaf for starch?",answer:"Iodine solution",alts:["iodine"],hint:"Turns specific colour with starch"},
     {q:"What colour does iodine turn if starch IS present?",answer:"Blue-black",alts:["dark blue","blue black"],hint:"Dramatic dark colour"},
     {q:"Why put a leaf in ethanol when testing for starch?",answer:"To remove the chlorophyll",alts:["remove chlorophyll","to decolourise the leaf"],hint:"Green would hide result"},
+    {q:"What is the word equation for photosynthesis?",answer:"Carbon dioxide + water → glucose + oxygen",alts:["CO2 + water → glucose + oxygen"],hint:"Light and chlorophyll are needed"},
+    {q:"What is the symbol equation for photosynthesis?",answer:"6CO2 + 6H2O → C6H12O6 + 6O2",alts:[],hint:"Six of each reactant"},
+    {q:"How is glucose stored in plants?",answer:"As starch",alts:["starch"],hint:"Tested using iodine"},
+    {q:"Where in the leaf are most chloroplasts found?",answer:"The palisade mesophyll layer",alts:["palisade layer","palisade mesophyll"],hint:"Near the top of the leaf to get the most light"},
+    {q:"Why is the upper epidermis transparent?",answer:"So light can pass through to the palisade layer below",alts:["to let light through"],hint:"Light needs to reach the chloroplasts"},
+    {q:"What is the function of vascular bundles in a leaf?",answer:"Xylem delivers water and phloem takes away glucose",alts:["transport water in and glucose out"],hint:"Transport vessels"},
+    {q:"What does the waxy cuticle do?",answer:"Reduces water loss by evaporation",alts:["prevents water loss"],hint:"A waxy waterproof layer"},
+    {q:"What happens to the rate of photosynthesis above 45°C?",answer:"It rapidly decreases because enzymes are denatured",alts:["it decreases, enzymes denatured"],hint:"Enzymes are destroyed at high temperatures"},
+    {q:"What is a limiting factor?",answer:"Something that stops photosynthesis from happening any faster",alts:["the factor in shortest supply"],hint:"The factor in shortest supply"},
+    {q:"How can you show that light is needed for photosynthesis?",answer:"Keep a plant in the dark for 48 hours, test a leaf for starch with iodine — it won't turn blue-black",alts:["dark plant produces no starch"],hint:"No light means no starch"},
+    {q:"How can you show CO2 is needed for photosynthesis?",answer:"Put a plant in a sealed jar with soda lime which absorbs CO2, then test for starch — the leaf won't turn blue-black",alts:["remove CO2 with soda lime, no starch made"],hint:"Soda lime removes the CO2"},
+    {q:"How do you use pondweed to measure rate of photosynthesis?",answer:"Count oxygen bubbles or measure the length of gas collected at different light distances",alts:["count bubbles at different distances"],hint:"More light means more bubbles"},
+    {q:"What colour does hydrogen-carbonate indicator go in normal CO2?",answer:"Orange",alts:[],hint:"It's the starting colour"},
+    {q:"In the hydrogen-carbonate indicator experiment, what colour would you expect in the tube wrapped in foil?",answer:"Yellow because only respiration happens, increasing CO2 concentration",alts:["yellow"],hint:"No light means no photosynthesis"},
+    {q:"What is the function of the palisade mesophyll tissue?",answer:"It is the main site of photosynthesis — cells are tightly packed with lots of chloroplasts just below the upper epidermis",alts:["main site of photosynthesis"],hint:"Top layer of cells with the most chloroplasts"},
+    {q:"What is the function of the spongy mesophyll tissue?",answer:"Site of gas exchange — has air spaces for gases to diffuse between cells",alts:["gas exchange"],hint:"Spongy because of all the air gaps"},
   ]},
   {id:"atomic_structure",subject:"chemistry",name:"Atomic Structure",emoji:"⚛️",color:"#f59e0b",questions:[
     {q:"What are the three subatomic particles?",answer:"Protons, neutrons, electrons",alts:["proton, neutron, electron"],hint:"Two in nucleus, one orbiting"},
@@ -420,7 +523,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
                 for(const n of names){const s=parentData.find(x=>x.name===n);if(!s)continue;for(const[tid,tp] of Object.entries(s.progress||{})){const ex=merged[tid];if(!ex){merged[tid]={...tp}}else{merged[tid]={correct:(ex.correct||0)+(tp.correct||0),total:(ex.total||0)+(tp.total||0),interval:Math.max(ex.interval||1,tp.interval||1),lastSeen:(!ex.lastSeen||(tp.lastSeen&&new Date(tp.lastSeen)>new Date(ex.lastSeen)))?tp.lastSeen:ex.lastSeen,nextDate:(!ex.nextDate||(tp.nextDate&&new Date(tp.nextDate)<new Date(ex.nextDate)))?tp.nextDate:ex.nextDate}}}}
                 const targetId=mergeTarget.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");
                 await saveProgress(targetId,merged);
-                for(const n of names){if(n===mergeTarget)continue;const id=n.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");await sbFetch(`kv_store?key=eq.${encodeURIComponent(PFX+id)}`,{method:"DELETE"})}
+                for(const n of names){if(n===mergeTarget)continue;const id=n.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");await sbDelete(PFX+id)}
                 const fresh=await loadAllProgress();setParentData(fresh);
                 setMergeMode(false);setMergeSelected(new Set());setMergeTarget("");setMergeBusy(false);
               }} style={{...b("#6366f1","white"),opacity:mergeBusy?.6:1}}>{mergeBusy?"Merging...":`✓ Merge into "${mergeTarget}"`}</button>}
@@ -451,7 +554,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
                       <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px"}}>{topicsDone}/{TOPICS.length}</div><div style={{fontSize:"10px",color:D.muted}}>Topics</div></div>
                       <div style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:"20px",color:"#22c55e"}}>{confN}</div><div style={{fontSize:"10px",color:D.muted}}>Confident</div></div>
                       <span style={{fontSize:"18px",color:D.muted,transition:"transform .2s",transform:isExp?"rotate(180deg)":"none"}}>▼</span>
-                      <button onClick={async(e)=>{e.stopPropagation();if(!confirm("Delete all data for "+student.name+"? This cannot be undone."))return;const key=PFX+student.name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");await sbFetch(`kv_store?key=eq.${encodeURIComponent(key)}`,{method:"DELETE"});setParentData(prev=>prev.filter(s=>s.name!==student.name))}} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",padding:"4px 8px",opacity:.5,transition:"opacity .15s"}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.5} title="Delete student">🗑️</button>
+                      <button onClick={async(e)=>{e.stopPropagation();if(!confirm("Delete all data for "+student.name+"? This cannot be undone."))return;const key=PFX+student.name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");const res=await sbDelete(key);if(!res.ok){alert(`Delete failed (HTTP ${res.status}). Your Supabase anon key may not have DELETE permissions. Details: ${res.body||"(empty)"}`);return}if(res.deleted===0){alert(`No row was deleted. The key "${key}" may not exist, or RLS is blocking DELETE. Check the Supabase dashboard.`);return}setParentData(prev=>prev.filter(s=>s.name!==student.name))}} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",padding:"4px 8px",opacity:.5,transition:"opacity .15s"}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.5} title="Delete student">🗑️</button>
                     </div>
                   </div>
                 </div>
