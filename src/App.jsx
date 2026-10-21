@@ -573,7 +573,6 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
 
   // ═══ PARENT ═══
   if(screen==="parent"){
-      if(screen==="parent"){
     const TOPICS=getAllTopics(); // include topics added via Add Questions
     return(
       <div style={wr}><link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
