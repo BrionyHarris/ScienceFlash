@@ -69,6 +69,7 @@ const SUBJECTS = [
   {id:"biology",name:"Biology",emoji:"🧬",color:"#22c55e",grad:"linear-gradient(135deg,#166534,#15803d)"},
   {id:"chemistry",name:"Chemistry",emoji:"⚗️",color:"#f59e0b",grad:"linear-gradient(135deg,#92400e,#b45309)"},
   {id:"physics",name:"Physics",emoji:"⚡",color:"#3b82f6",grad:"linear-gradient(135deg,#1e3a8a,#1d4ed8)"},
+    {id:"rs",name:"Religious Studies",emoji:"☸️",color:"#e11d48",grad:"linear-gradient(135deg,#9f1239,#be123c)"},
 ];
 
 const TOPICS = [
