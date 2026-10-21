@@ -518,7 +518,7 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
     const cqs=await loadCustomQs();setCustomQs(cqs);setCustomLoaded(true);
     setUser({name,id});setProgress(prog);pickQuestion(prog,null,cqs);setScreen("quiz");setLoginLoading(false);
   }
-  async function openParent(){setParentLoading(true);setScreen("parent");const all=await loadAllProgress();setParentData(all);setParentLoading(false)}
+  async function openParent(){setParentLoading(true);setScreen("parent");const cqs=await loadCustomQs();setCustomQs(cqs);const all=await loadAllProgress();setParentData(all);setParentLoading(false)}
   function pickQuestion(prog=progress,f=focus){
     const pool=getPool(f);const due=pool.filter(t=>isDue(prog[t.id]));const from=due.length>0?due:pool;
     const topic=pick(from);let q,tries=0;
@@ -573,6 +573,8 @@ const [listening,setListening]=useState(false);const recogRef=useRef(null);const
 
   // ═══ PARENT ═══
   if(screen==="parent"){
+      if(screen==="parent"){
+    const TOPICS=getAllTopics(); // include topics added via Add Questions
     return(
       <div style={wr}><link href={FONTS} rel="stylesheet"/><style>{CSS}</style>
         <div style={{maxWidth:960,margin:"0 auto",width:"100%"}}>
